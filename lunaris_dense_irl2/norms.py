@@ -20,11 +20,9 @@ class RMSNorm(nn.Module):
 
         input_dtype = x.dtype
         x_float = x.float()
-        inverse_rms = torch.rsqrt(
-            x_float.square().mean(dim=-1, keepdim=True) + self.eps
-        )
-        normalized = x_float * inverse_rms
-        return (normalized * self.weight.float()).to(input_dtype)
+        variance = x_float.square().mean(dim=-1, keepdim=True)
+        normalized = x_float * torch.rsqrt(variance + self.eps)
+        return normalized.to(input_dtype) * self.weight.to(input_dtype)
 
 
 class IdentityNorm(nn.Module):
