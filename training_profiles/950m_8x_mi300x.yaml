@@ -1,0 +1,86 @@
+model_profile: "../profiles/950m.yaml"
+model:
+  use_gradient_checkpointing: true
+  gradient_checkpointing_policy: "irl"
+  track_irl_stats: false
+
+data:
+  train_dir: "/data/lunaris/train"
+  validation_dir: "/data/lunaris/validation"
+  sequence_length: 32768
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  mmap_cache_size: 8
+  shuffle: true
+  seed: 1337
+
+optimizer:
+  name: "adamw"
+  learning_rate: 0.0003
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-8
+  fused: "auto"
+
+schedule:
+  name: "wsd"
+  warmup_steps: 2000
+  stable_steps: 88000
+  decay_steps: 10000
+  min_lr_ratio: 0.1
+  decay_shape: "cosine"
+
+parallel:
+  strategy: "fsdp2"
+  precision: "bf16"
+  reduce_dtype: "fp32"
+  compile: false
+  regional_compile: true
+  compile_mode: "max-autotune-no-cudagraphs"
+  reshard_after_forward: false
+  fsdp_replicate_group_size: 1
+  timeout_minutes: 30
+
+training:
+  micro_batch_size: 1
+  gradient_accumulation_steps: 1
+  max_steps: 100000
+  seed: 1337
+  gradient_clip: 1.0
+  gradient_clip_mode: "global"
+  loss_chunk_size: 1024
+  loss_backend: "auto"
+  z_loss_coefficient: 1.0e-4
+
+objectives:
+  irl_start_iters: 1
+  irl_ramp_steps: 10000
+  irl_consistency_weight: 0.01
+  irl_consistency_warmup_steps: 5000
+  irl_consistency_ramp_steps: 5000
+  mtp_loss_weight: 0.2
+  mtp_warmup_steps: 2000
+  mtp_ramp_steps: 8000
+  mtp_horizon_interval: 4000
+  mtp_horizon_decay: 0.7
+
+validation:
+  interval: 500
+  batches: 50
+
+checkpoint:
+  directory: "checkpoints/lunaris_950m"
+  interval: 1000
+  keep_last: 3
+  async_save: true
+  resume: "auto"
+  save_final: true
+
+logging:
+  interval: 10
+  jsonl_path: "checkpoints/lunaris_950m/metrics.jsonl"
+  wandb_project: null
+  profile_steps: 0

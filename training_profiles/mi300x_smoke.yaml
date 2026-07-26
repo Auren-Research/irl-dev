@@ -1,0 +1,103 @@
+model:
+  vocab_size: 65536
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  n_kv_heads: 2
+  ffn_hidden_dim: 256
+  max_seq_len: 512
+  attention_pattern: "LG"
+  local_window: 128
+  attention_backend: "auto"
+  flex_block_size: 128
+  irl_train_iters: 2
+  irl_eval_iters: 2
+  mtp_num_heads: 2
+  mtp_irl_iters: 1
+  mtp_ffn_hidden_dim: 128
+  dropout: 0.0
+  attention_dropout: 0.0
+  tie_word_embeddings: true
+  qk_norm: true
+  pad_token_id: 1
+  bos_token_id: 2
+  eos_token_id: 3
+
+data:
+  train_dir: "data/qualification/train"
+  validation_dir: "data/qualification/validation"
+  sequence_length: 512
+  num_workers: 2
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  mmap_cache_size: 2
+  shuffle: true
+  seed: 1337
+
+optimizer:
+  name: "adamw"
+  learning_rate: 0.001
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-8
+  fused: "auto"
+
+schedule:
+  name: "wsd"
+  warmup_steps: 1
+  stable_steps: 2
+  decay_steps: 1
+  min_lr_ratio: 0.1
+  decay_shape: "cosine"
+
+parallel:
+  strategy: "none"
+  precision: "bf16"
+  reduce_dtype: "fp32"
+  compile: false
+
+training:
+  micro_batch_size: 2
+  gradient_accumulation_steps: 1
+  max_steps: 4
+  seed: 1337
+  gradient_clip: 1.0
+  gradient_clip_mode: "global"
+  loss_chunk_size: 256
+  loss_backend: "chunked"
+  z_loss_coefficient: 1.0e-4
+  fail_on_nonfinite: true
+
+objectives:
+  irl_start_iters: 1
+  irl_ramp_steps: 2
+  irl_consistency_weight: 0.01
+  irl_consistency_warmup_steps: 1
+  irl_consistency_ramp_steps: 1
+  mtp_loss_weight: 0.2
+  mtp_warmup_steps: 1
+  mtp_ramp_steps: 1
+  mtp_horizon_interval: 1
+  mtp_horizon_decay: 0.7
+
+validation:
+  interval: 2
+  batches: 2
+  at_start: true
+
+checkpoint:
+  directory: "qualification_artifacts/checkpoints/smoke"
+  interval: 2
+  keep_last: 2
+  async_save: false
+  resume: "auto"
+  save_final: true
+
+logging:
+  interval: 1
+  jsonl_path: "qualification_artifacts/smoke_metrics.jsonl"
+  wandb_project: null
+  profile_steps: 0
+

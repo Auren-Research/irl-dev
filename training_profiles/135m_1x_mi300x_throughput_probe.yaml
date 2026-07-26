@@ -1,0 +1,82 @@
+model_profile: "../profiles/135m_mi300x_qualification.yaml"
+model:
+  use_gradient_checkpointing: false
+  track_irl_stats: false
+
+data:
+  train_dir: "data/qualification/train"
+  validation_dir: null
+  sequence_length: 4096
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  mmap_cache_size: 2
+  shuffle: true
+  seed: 2026
+
+optimizer:
+  name: "adamw"
+  learning_rate: 0.0006
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-8
+  fused: "auto"
+
+schedule:
+  name: "constant"
+  warmup_steps: 0
+  min_lr_ratio: 1.0
+
+parallel:
+  strategy: "none"
+  precision: "bf16"
+  reduce_dtype: "fp32"
+  compile: false
+  compile_mode: "max-autotune-no-cudagraphs"
+  timeout_minutes: 30
+
+training:
+  micro_batch_size: 16
+  gradient_accumulation_steps: 1
+  max_steps: 10
+  seed: 2026
+  gradient_clip: 1.0
+  gradient_clip_mode: "global"
+  loss_chunk_size: 4096
+  loss_backend: "chunked"
+  z_loss_coefficient: 1.0e-4
+  fail_on_nonfinite: true
+
+objectives:
+  irl_start_iters: 2
+  irl_ramp_steps: 0
+  irl_consistency_weight: 0.01
+  irl_consistency_warmup_steps: 0
+  irl_consistency_ramp_steps: 0
+  mtp_loss_weight: 0.2
+  mtp_warmup_steps: 0
+  mtp_ramp_steps: 0
+  mtp_horizon_interval: 0
+  mtp_horizon_decay: 0.7
+
+validation:
+  interval: 0
+  batches: 0
+  at_start: false
+
+checkpoint:
+  directory: "qualification_artifacts/checkpoints/throughput_probe"
+  interval: 0
+  keep_last: 1
+  async_save: false
+  resume: "none"
+  save_final: false
+
+logging:
+  interval: 1
+  jsonl_path: "qualification_artifacts/throughput_probe_metrics.jsonl"
+  wandb_project: null
+  profile_steps: 0
+  peak_tflops_per_gpu: null
