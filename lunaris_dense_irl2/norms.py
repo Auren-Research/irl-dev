@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class RMSNorm(nn.Module):
@@ -19,12 +20,13 @@ class RMSNorm(nn.Module):
         """Normalize the final dimension while preserving the input dtype."""
 
         input_dtype = x.dtype
-        x_float = x.float()
-        inverse_rms = torch.rsqrt(
-            x_float.square().mean(dim=-1, keepdim=True) + self.eps
+        normalized = F.rms_norm(
+            x.float(),
+            (self.dimension,),
+            self.weight.float(),
+            self.eps,
         )
-        normalized = x_float * inverse_rms
-        return (normalized * self.weight.float()).to(input_dtype)
+        return normalized.to(input_dtype)
 
 
 class IdentityNorm(nn.Module):
