@@ -305,6 +305,18 @@ This borrows the conditional-hazard idea from PonderNet but is not its exact
 expected-per-step prediction loss. The approximation avoids running the
 Transformer coda and vocabulary projection at every recurrent step.
 
+The soft training state and hard evaluation state are not mathematically
+interchangeable because the coda and LM head are nonlinear:
+
+\[
+f\!\left(\sum_t p_t S^{(t)}\right)\ne
+\sum_t p_t f(S^{(t)})
+\]
+
+in general. The qualification therefore evaluates `act` and `adaptive` from
+the same checkpoint at overlapping budgets rather than assuming their CE or
+latency is equivalent.
+
 Three modes are implemented:
 
 - `fixed`: run exactly the assigned budget; used for controlled scaling;
@@ -330,12 +342,17 @@ to converge as strongly as reasoning state. The terminal objective is
 \frac{\|Z^{(T)}-Z^{(T-1)}\|_2^2}
 {\|\bar Z\|_2^2+\epsilon}
 +
-\frac{\|H^{(T)}-H^{(T-1)}\|_2^2}
+\frac{\|H^{(\tau_H)}-H^{(\tau_H-1)}\|_2^2}
 {\|\bar H\|_2^2+\epsilon}
 +\eta_M
 \frac{\|M^{(T)}-M^{(T-1)}\|_2^2}
 {\|\bar M\|_2^2+\epsilon}.
 \]
+
+(\tau_H) is the most recent executed slow-clock tick. The H term is zero only
+when no slow update occurred at the assigned depth; non-tick steps after the
+last H update do not erase its residual. This makes arbitrary slow intervals
+and depths not divisible by the interval meaningful.
 
 (eta_M<1) by default because useful memory may still be writing near the
 terminal state. This is a diagnostic and weak regularizer, not an implicit
@@ -374,6 +391,13 @@ A_i'=A_i+\Delta A_i.
 The coda and LM head consume (A_i'). The write-back scale starts small but
 nonzero, so the recurrent computer affects logits from initialization while
 preserving a stable residual route.
+
+An evaluation-only `disable_irl3_writeback=True` control still executes the
+same recurrent computer and measures its proposed correction, but feeds
+(A_i) rather than (A_i') to the unchanged coda. No ablation checkpoint is
+trained. Alongside correction RMS, diagnostics report
+(\|\Delta A\|_2/\|A\|_2), equivalently the global RMS ratio for equal-shaped
+tensors.
 
 ## 12. Persistent state across token time
 
@@ -425,17 +449,55 @@ recurrent computer.
 ## 14. Cost model
 
 Let (L) be sequence length, (T) recurrent depth, (W_A) anchor window,
-and (N_Z,N_H,N_M) slot counts. The dominant anchor score tensor scales as
+(d_s) state width, and (N_Z,N_H,N_M) slot counts. A state-attention call with
+(q) query slots and (k) key/value slots is counted as
 
 \[
-O(BLTN_ZW_Ad_s),
+C_{\mathrm{att}}(q,k)=4(q+k)d_s^2+4qkd_s.
 \]
 
-while state attention scales with small slot products such as
+The first term counts the actual Q/K/V/O projection rows and the second counts
+QK and probability-value products, using two FLOPs per multiply-add. Thus the
+always-executed recurrent step includes
 
 \[
-O(BLT(N_Z^2+N_ZN_M+N_ZN_H)d_s).
+C_{\mathrm{att}}(N_Z,N_M)+C_{\mathrm{att}}(N_Z,N_H)
++C_{\mathrm{att}}(N_Z,N_Z)+C_{\mathrm{att}}(N_M,N_Z),
 \]
+
+plus anchor query/output projections, (4N_ZW_Ad_s) anchor mixing, the Z
+SwiGLU, phase/halt networks, memory erase/add/write layers, priors, and update
+gates. A slow tick adds
+
+\[
+C_{\mathrm{att}}(N_H,N_Z+N_M)+C_{\mathrm{att}}(N_H,N_H)
+\]
+
+plus the H SwiGLU, prior, and gate. The implementation counts exactly
+(\lfloor T/I_H\rfloor) slow ticks rather than dividing a per-step estimate by
+the interval. State seeding and anchor K/V cost (10d d_s) once per token.
+Write-back costs
+
+\[
+8d d_s+C_{\mathrm{att}}(1,N_Z+N_H+N_M).
+\]
+
+Each active MTP horizon contributes approximately
+(8d^2+6d d_{\mathrm{mtp}}+2d|V|), scaled by the fraction of positions that
+have that target horizon.
+
+For training, the estimator reports
+
+\[
+F_{\mathrm{train}}=F_{\mathrm{forward}}+2F_{\mathrm{diff}}
++F_{\mathrm{checkpoint\ recompute}},
+\]
+
+where only recurrent steps inside the configured gradient horizon enter
+(F_{\mathrm{diff}}), and the selected checkpoint region is added explicitly.
+It omits embedding lookup, normalization, nonlinearities, softmax/masking,
+reductions, and elementwise gates. Those omissions and small-slot kernel launch
+costs are why measured MI300X time remains authoritative.
 
 Anchor K/V are projected once, and recurrent parameters do not grow with
 (T). Activations do grow with teacher-forced prefix count and gradient
@@ -458,8 +520,10 @@ include:
 - anchor-read RMS and normalized attention entropy;
 - memory read/write RMS and write-gate utilization;
 - (Z/H/M) update RMS and state RMS;
-- joint terminal residual and consecutive residual ratios;
-- token write-back RMS.
+- a slow-tick mask, count, last tick, and the last meaningful H residual;
+- fast-state residual/contraction separately from clock-confounded joint
+  residual ratios;
+- token write-back RMS and correction-to-anchor norm ratio.
 
 The MI300X depth benchmark records these with loss, latency, throughput, and
 peak HBM in JSON.

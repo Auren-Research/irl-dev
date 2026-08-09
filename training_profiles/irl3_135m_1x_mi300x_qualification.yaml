@@ -28,7 +28,7 @@ optimizer:
 schedule:
   name: "wsd"
   warmup_steps: 40
-  stable_steps: 160
+  stable_steps: 120
   decay_steps: 40
   min_lr_ratio: 0.1
 
@@ -42,8 +42,8 @@ parallel:
 training:
   micro_batch_size: 4
   gradient_accumulation_steps: 1
-  max_steps: 240
-  max_tokens: 3932160
+  max_steps: 200
+  max_tokens: 3276800
   seed: 1337
   gradient_clip: 1.0
   gradient_clip_mode: "global"
@@ -72,13 +72,13 @@ objectives:
   mtp_horizon_decay: 0.7
 
 validation:
-  interval: 80
+  interval: 100
   batches: 8
   at_start: true
 
 checkpoint:
   directory: "qualification_artifacts/irl3/checkpoints/main"
-  interval: 120
+  interval: 100
   keep_last: 2
   async_save: false
   resume: "auto"

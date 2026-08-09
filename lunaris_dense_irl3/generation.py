@@ -58,6 +58,7 @@ def generate(
     compute_depth: Optional[int] = None,
     halt_mode: Optional[str] = None,
     persist_reasoning_state: Optional[bool] = None,
+    disable_irl3_writeback: bool = False,
     generator: Optional[torch.Generator] = None,
 ) -> torch.Tensor:
     """Generate while optionally carrying ``Z/H/M`` between token steps."""
@@ -82,6 +83,7 @@ def generate(
             compute_depth=compute_depth,
             halt_mode=halt_mode,
             persist_reasoning_state=persist_reasoning_state,
+            disable_irl3_writeback=disable_irl3_writeback,
             logits_to_keep=1,
         )
         if output.logits is None:
@@ -114,6 +116,7 @@ def generate(
                 compute_depth=compute_depth,
                 halt_mode=halt_mode,
                 persist_reasoning_state=persist_reasoning_state,
+                disable_irl3_writeback=disable_irl3_writeback,
                 logits_to_keep=1,
             )
             if output.logits is None:

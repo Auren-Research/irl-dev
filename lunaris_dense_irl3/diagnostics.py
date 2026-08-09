@@ -52,12 +52,22 @@ class IRL3Diagnostics:
     z_rms: torch.Tensor
     h_rms: torch.Tensor
     m_rms: torch.Tensor
+    slow_update_mask: torch.Tensor
+    fast_residual: torch.Tensor
     joint_residual: torch.Tensor
+    fast_contraction_ratios: torch.Tensor
     contraction_ratios: torch.Tensor
+    equilibrium_z_residual: torch.Tensor
+    equilibrium_h_residual: torch.Tensor
+    equilibrium_m_residual: torch.Tensor
+    last_h_update_rms: torch.Tensor
     writeback_rms: torch.Tensor
+    writeback_to_anchor_ratio: torch.Tensor
     expected_steps: torch.Tensor
     step_counts: torch.Tensor
     iterations: int
+    slow_updates: int
+    last_slow_update_step: int
     converged_fraction: float
     halt_mode: str
 
@@ -99,3 +109,4 @@ class LunarisIRL3CausalLMOutput:
     cache: Optional["IRL3Cache"] = None
     reasoning_state: Optional[IRL3State] = None
     irl3_diagnostics: Optional[IRL3Diagnostics] = None
+    writeback_disabled: bool = False

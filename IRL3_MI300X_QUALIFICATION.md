@@ -1,8 +1,8 @@
 # IRL-3 single-MI300X qualification
 
 This is a bounded architecture qualification for one AMD Instinct MI300X with
-192 GB HBM. It is not an attempt to establish converged language-model quality.
-The MI300X is not assumed to be available during implementation.
+192 GB HBM. It is intended to falsify or support implementation and mechanism
+hypotheses, not to establish converged language-model quality.
 
 ## One-command run
 
@@ -12,58 +12,84 @@ From the AMD Primus PyTorch/ROCm environment at the repository root:
 timeout --foreground 13800s bash scripts/run_irl3_mi300x_qualification.sh
 ```
 
-The outer timeout is 3 hours 50 minutes, reserving ten minutes inside a hard
+The outer timeout is 3 hours 50 minutes, preserving ten minutes inside a hard
 four-hour allocation for artifact recovery. The runner is resumable and uses
-only complete checkpoints marked `_SUCCESS`.
+only distributed checkpoints marked `_SUCCESS`.
 
-## What it exercises
+## Server requirements
 
-1. ROCm device discovery, BF16 matmul, SDPA, and GQA probes.
-2. The full repository test suite on the server build.
-3. Deterministic data preparation and manifests.
-4. A four-step BF16 IRL-3 smoke train.
-5. A 136M-parameter, context-4096 train with sampled recurrent budgets.
-6. Distributed-checkpoint save, reload, five-step extension, and export.
-7. Fixed inference depths 2, 4, 6, 8, and 12 on one checkpoint.
-8. Adaptive-halting maximum budgets 4, 8, and 12.
-9. Throughput, peak HBM, CE, and recurrent diagnostics at every depth.
-10. If at least 40 minutes remain, an approximately parameter- and
-    sequence-matched short IRL-2 baseline and its own depth sweep.
-11. JSON and Markdown research summaries with explicit interpretation limits.
+- Linux with one visible gfx942/MI300X accelerator and 192 GB HBM;
+- AMD Primus or another ROCm PyTorch environment with Python 3.10 or newer,
+  `torch>=2.7`, BF16, SDPA GQA backward, and `torch.version.hip` available;
+- Bash, GNU `timeout`, GNU `find` with `-printf`, GNU `date`, `curl`, and normal
+  coreutils;
+- at least 50 GB of writable local disk for the source shard, prepared data,
+  checkpoints, exports, compiler cache, and reports;
+- outbound HTTPS access to Hugging Face, or these files pre-staged at
+  `data/source/ultrafineweb/`: `shard_0000.npy` and
+  `lunaris-tokenizer.json`;
+- permission to install the repository editable plus lightweight `numpy`,
+  `pytest`, and `PyYAML` dependencies. The bootstrap never replaces the
+  server's ROCm PyTorch build.
 
-## Proposed wall-clock schedule
+Set `PYTHON_BIN` if the desired interpreter is not `python3`. The runner sets
+`PYTORCH_ROCM_ARCH=gfx942`, `GPU_MAX_HW_QUEUES=2`, and a repository-local
+TorchInductor cache unless those variables are already supplied.
 
-| Elapsed | Phase | Hard phase cap | Purpose |
-|---:|---|---:|---|
-| 0:00-0:15 | environment, accelerator report, tests | 20 min | reject runtime incompatibility early |
-| 0:15-0:35 | download/data reuse or preparation, preflight | 20 min target | verify data IDs and exact configs |
-| 0:35-0:50 | four-step smoke | 15 min | forward/backward, MTP, save |
-| 0:50-2:50 | 136M IRL-3 run | 120 min | stability and short learning signal |
-| 2:50-3:05 | resume and portable export | 15 min | checkpoint correctness |
-| 3:05-3:35 | fixed/adaptive depth sweeps | 30 min | test-time compute and halting evidence |
-| 3:35-3:50 | optional IRL-2 baseline or report reserve | adaptive | baseline if time permits |
-| by 3:50 | summary complete | reserve | preserve artifacts before cutoff |
+## What the run exercises
 
-The runner checks remaining wall time before starting the optional baseline.
-All long phases also have local GNU `timeout` caps.
+1. ROCm discovery plus finite BF16 matmul and SDPA/GQA backward probes.
+2. The complete repository test suite on the actual server build.
+3. Deterministic data preparation, manifests, and both model preflights.
+4. A four-step BF16 IRL-3 train through MTP, equilibrium, optimizer, and DCP.
+5. A 134.8M-parameter, context-4096 IRL-3 run with sampled recurrent budgets.
+6. DCP reload, five-step extension, and portable checkpoint export.
+7. A guaranteed parameter/sequence-matched short IRL-2 train and depth sweep.
+8. One IRL-3 checkpoint evaluated at fixed depths 2/4/6/8/12.
+9. That same checkpoint evaluated with ACT-soft and adaptive-hard budgets
+   4/8/12.
+10. A same-checkpoint, fixed-depth-six write-back-off control. The computer
+    still executes, but its correction is withheld from the coda.
+11. CE, latency, throughput, peak HBM, analytic FLOPs, halting distributions,
+    Z/H/M dynamics, slow ticks, memory activity, and correction-to-anchor ratio.
+12. Machine-readable JSON plus a Markdown report that places soft and hard
+    halting side by side and reports OFF-minus-ON CE explicitly.
 
-## Main IRL-3 profile
+## Bounded schedule
 
-`profiles/irl3_135m_mi300x_qualification.yaml` uses:
+| Elapsed | Phase | Purpose |
+|---:|---|---|
+| 0:00-0:15 | environment, accelerator report, tests | reject runtime incompatibility early |
+| 0:15-0:30 | data reuse/preparation and preflight | freeze data/config identity |
+| 0:30-0:42 | four-step IRL-3 smoke | forward/backward, MTP, save |
+| 0:42-2:22 | 200-step IRL-3 run | stability and short learning signal |
+| 2:22-2:32 | five-step resume and export | checkpoint correctness |
+| 2:32-3:02 | guaranteed 60-step IRL-2 run/export/sweep | matched path control |
+| 3:02-3:37 | fixed, ACT, adaptive, and write-back-off probes | mechanism and cost evidence |
+| 3:37-3:45 | summary and artifact verification | preserve conclusions before cutoff |
+| 3:45-3:50 | recovery reserve | copy or inspect artifacts |
 
-- vocabulary 65,536, tied embeddings;
+The 200-step IRL-3 budget is 3,276,800 observed training tokens. The guaranteed
+IRL-2 control is 60 steps and 983,040 tokens. They are deliberately not
+presented as converged or token-matched quality comparisons.
+
+## Main architecture profile
+
+`profiles/irl3_135m_mi300x_qualification.yaml` remains unchanged and uses:
+
+- vocabulary 65,536 with tied embeddings;
 - model width 768;
 - 12 fixed Transformer layers: ten prelude and two coda;
 - mixed `LLLG` local/global GQA;
 - state width 512;
-- six fast latents, six memory slots, two slow slots;
-- 128-token causal anchor-read window;
+- six fast latents, six memory slots, and two slow slots;
+- a 128-token causal anchor-read window;
 - train depth up to six and evaluation support up to 32;
-- four-step gradient horizon;
-- two MTP horizons;
+- a four-step gradient horizon and two MTP horizons;
 - BF16 and recurrent-computer checkpointing.
 
-Preflight on the current code is authoritative for the exact parameter count:
+Preflight is authoritative for parameter count and now records the complete
+analytic FLOPs component breakdown:
 
 ```bash
 python -m lunaris_dense_irl3.training.preflight \
@@ -73,24 +99,16 @@ python -m lunaris_dense_irl3.training.preflight \
   --output qualification_artifacts/irl3/irl3_preflight.json
 ```
 
-## Manual phase commands
+At depth six with two active MTP horizons, the corrected estimator reports
+approximately 1.254 billion forward FLOPs and 4.025 billion executed training
+FLOPs per observed token. The latter includes the four-step credit horizon and
+computer checkpoint recomputation. It counts dense linear and attention
+matmuls, not normalizations, nonlinearities, softmax/masking, reductions, or
+kernel-launch overhead. Measured MI300X time is authoritative.
 
-If the one-command runner must be resumed manually:
+## Manual inference controls
 
-```bash
-python -m lunaris_dense_irl3.training.train \
-  --config training_profiles/irl3_mi300x_smoke.yaml
-
-python -m lunaris_dense_irl3.training.train \
-  --config training_profiles/irl3_135m_1x_mi300x_qualification.yaml
-
-python -m lunaris_dense_irl3.training.train \
-  --config training_profiles/irl3_135m_1x_mi300x_qualification.yaml \
-  --max-steps 245 \
-  --resume auto
-```
-
-After export, the controlled depth probe is:
+After portable export, the fixed probe is:
 
 ```bash
 python scripts/benchmark_recurrent_depth.py \
@@ -107,42 +125,61 @@ python scripts/benchmark_recurrent_depth.py \
   --output qualification_artifacts/irl3/irl3_fixed_depth.json
 ```
 
+Use `--halt-mode act` or `--halt-mode adaptive` with `--depths 4,8,12` for
+the soft/hard comparison. Add `--disable-writeback --depths 6 --halt-mode
+fixed` for the evaluation-only OFF control. The runner encodes the exact
+commands and common data/checkpoint paths.
+
 ## Artifacts
 
 Everything is written under `qualification_artifacts/irl3/`:
 
-- `accelerator_report.json` and `rocm_smi.txt`;
-- `pytest.txt` and complete `qualification.log`;
-- data manifest and IRL-2/IRL-3 preflight JSON;
-- smoke, main, and optional baseline JSONL metrics;
-- resumable DCP checkpoints and portable exported models;
-- `irl3_fixed_depth.json` and `irl3_adaptive_depth.json`;
-- optional `irl2_depth.json`;
+- `qualification.log`, `pytest.txt`, `accelerator_report.json`, and
+  `rocm_smi.txt`;
+- `data_manifest.json`, `irl3_preflight.json`, and `irl2_preflight.json`;
+- `smoke_metrics.jsonl`, `main_metrics.jsonl`, and
+  `irl2_baseline_metrics.jsonl`;
+- resumable checkpoints under `checkpoints/`;
+- `portable_irl3/` and `portable_irl2/`;
+- `irl3_fixed_depth.json`, `irl3_act_depth.json`,
+  `irl3_adaptive_depth.json`, and `irl3_writeback_off.json`;
+- `irl2_depth.json`;
 - `summary.json` and `SUMMARY.md`.
 
-## Acceptance and decision criteria
+Benchmark JSON schema version 2 records CE samples, median batch latency,
+tokens/second, timed and diagnostic peak memory, budget and diagnostic-batch
+analytic FLOPs, the evaluation variant, and recurrent diagnostics. The
+summarizer rejects IRL-3 input reports that reference different checkpoints.
+
+## Engineering gates and research questions
 
 Required engineering gates:
 
-- the device is reported as gfx942/MI300X and BF16 probes are finite;
-- all tests pass in the actual ROCm build;
-- full-path loss and gradients remain finite;
-- state RMS and update/residual diagnostics do not show runaway growth;
-- save, reload, extension, and portable export succeed;
-- cached generation and causal tests pass;
-- throughput and peak HBM are recorded for all fixed depths.
+- gfx942/MI300X and finite BF16 probes are recorded;
+- all tests pass on the ROCm build;
+- loss and gradients remain finite through full-path training;
+- save, reload, five-step extension, export, and benchmark reload succeed;
+- no Z/H/M state RMS, update, or residual exhibits runaway growth;
+- timed latency, throughput, and peak HBM exist for every requested variant.
 
-Research signals, not pass/fail claims:
+The report is designed to answer without selecting only favorable results:
 
-- whether CE changes monotonically, saturates, or degrades with extra depth;
-- whether residual ratios correlate with useful depth;
-- whether halt probabilities spread across examples or collapse to the minimum;
-- whether memory writes remain active without saturating erase/write gates;
-- whether slow-state ticks materially change (H);
-- the throughput and HBM slope per extra recurrent step;
-- how the short IRL-2 control differs at comparable parameter scale.
+1. Are the recurrent dynamics numerically stable and gradients nonzero?
+2. Does same-checkpoint write-back OFF increase, preserve, or reduce CE?
+3. Does extra fixed depth improve, saturate, or degrade CE?
+4. Do ACT-soft and adaptive-hard differ at the same maximum budgets?
+5. Does the halt distribution spread or collapse to a boundary?
+6. Are Z/H/M updates, memory writes, and slow ticks active rather than zero?
+7. Is the correction-to-anchor ratio material or suppressed?
+8. What are the measured compute, latency, throughput, and HBM slopes?
+9. How does the short parameter-matched IRL-2 control behave?
 
-A flat or negative depth curve after fewer than four million training tokens is
-not enough to reject recurrent test-time scaling. It is enough to reveal a
-broken path, unstable dynamics, a collapsed halt policy, or an inefficient
-kernel layout that should be fixed before a larger experiment.
+Joint residual ratios are clock-confounded because H moves periodically. The
+report therefore includes a slow-update mask and a fast Z/M contraction ratio;
+the last meaningful H equilibrium residual uses the transition immediately
+before and after the most recent slow tick.
+
+A flat or negative curve after roughly three million IRL-3 tokens is not enough
+to reject recurrent test-time scaling. It is enough to expose a broken path,
+unstable dynamics, collapsed routing, unused write-back, or impractical kernel
+cost that should be addressed before a larger experiment.

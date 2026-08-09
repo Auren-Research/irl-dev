@@ -129,6 +129,24 @@ adaptive = model(
 print(adaptive.irl3_diagnostics.step_counts)
 ```
 
+Qualification also compares the differentiable ACT-soft state with
+adaptive-hard freezing at the same 4/8/12 budgets. A same-checkpoint,
+evaluation-only write-back control is available without retraining:
+
+```python
+off = model.eval()(
+    tokens,
+    compute_depth=6,
+    halt_mode="fixed",
+    disable_irl3_writeback=True,
+    return_irl3_stats=True,
+)
+print(off.irl3_diagnostics.writeback_to_anchor_ratio)
+```
+
+The recurrent computer still executes in this control; only its correction is
+withheld from the coda.
+
 Cached generation can optionally carry final reasoning state from one token to
 the next:
 
@@ -222,6 +240,9 @@ IRL-3 tests cover:
   halting, write-back, and MTP;
 - multiple train/inference depths with one parameter set;
 - per-prefix adaptive halting;
+- ACT-soft versus adaptive-hard qualification and write-back-off controls;
+- meaningful slow-clock equilibrium residuals and clock-aware contraction
+  diagnostics;
 - causal no-future leakage and packed-document isolation;
 - full-versus-cached logit parity;
 - optional token-time state persistence;
@@ -240,9 +261,10 @@ timeout --foreground 13800s bash scripts/run_irl3_mi300x_qualification.sh
 ```
 
 The bounded runner records ROCm/BF16 compatibility, full-path smoke training,
-stability, checkpoint resume, fixed-depth scaling, adaptive halting, throughput,
-peak HBM, recurrent diagnostics, and—if time remains—a small matched IRL-2
-control. It emits machine-readable artifacts and a concise research summary.
+stability, checkpoint resume, fixed-depth scaling, ACT-soft versus
+adaptive-hard halting, a same-checkpoint write-back-off control, throughput,
+peak HBM, recurrent diagnostics, and a guaranteed small matched IRL-2 control.
+It emits machine-readable artifacts and a concise research summary.
 
 See [IRL3_MI300X_QUALIFICATION.md](IRL3_MI300X_QUALIFICATION.md) for the exact
 commands, phase caps, artifact schema, acceptance gates, and proposed schedule.

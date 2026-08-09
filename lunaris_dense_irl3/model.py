@@ -485,6 +485,7 @@ class LunarisIRL3ForCausalLM(nn.Module):
         persist_reasoning_state: Optional[bool] = None,
         return_reasoning_state: bool = False,
         return_irl3_stats: Optional[bool] = None,
+        disable_irl3_writeback: bool = False,
         logits_to_keep: int = 0,
         return_logits: bool = True,
         loss_chunk_size: int = 0,
@@ -502,6 +503,8 @@ class LunarisIRL3ForCausalLM(nn.Module):
             raise TypeError("input_ids must be an integer tensor")
         if input_ids.numel() == 0:
             raise ValueError("input_ids cannot be empty")
+        if disable_irl3_writeback and self.training:
+            raise ValueError("IRL-3 write-back ablation is evaluation-only")
         if labels is not None and labels.shape != input_ids.shape:
             raise ValueError("labels must have the same shape as input_ids")
         if cache is not None:
@@ -601,7 +604,11 @@ class LunarisIRL3ForCausalLM(nn.Module):
             gradient_horizon=gradient_horizon,
             return_stats=collect_stats,
         )
-        hidden_states = anchor + computer_result.correction
+        hidden_states = (
+            anchor
+            if disable_irl3_writeback
+            else anchor + computer_result.correction
+        )
 
         for layer_index in range(self.config.anchor_layers, self.config.n_layers):
             rope_cos, rope_sin = self._rope_for_layer(
@@ -726,6 +733,7 @@ class LunarisIRL3ForCausalLM(nn.Module):
                 public_state if return_reasoning_state or persist else None
             ),
             irl3_diagnostics=computer_result.diagnostics,
+            writeback_disabled=bool(disable_irl3_writeback),
         )
 
     def configure_optimizer(

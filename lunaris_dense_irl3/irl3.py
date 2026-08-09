@@ -727,7 +727,12 @@ class IRL3Computer(nn.Module):
             "memory_read": zero_metric,
         }
         previous_joint: Optional[torch.Tensor] = None
+        previous_fast: Optional[torch.Tensor] = None
         previous_state = state
+        last_h_before = state.h
+        last_h_after = state.h
+        last_slow_update_step = 0
+        slow_updates = 0
         halt_probabilities: List[torch.Tensor] = []
         halt_weights: List[torch.Tensor] = []
         active_fractions: List[torch.Tensor] = []
@@ -742,7 +747,10 @@ class IRL3Computer(nn.Module):
         z_rms: List[torch.Tensor] = []
         h_rms: List[torch.Tensor] = []
         m_rms: List[torch.Tensor] = []
+        slow_update_masks: List[torch.Tensor] = []
+        fast_residuals: List[torch.Tensor] = []
         joint_residuals: List[torch.Tensor] = []
+        fast_contraction_ratios: List[torch.Tensor] = []
         contraction_ratios: List[torch.Tensor] = []
         iterations_used = 0
 
@@ -769,6 +777,12 @@ class IRL3Computer(nn.Module):
                     track_stats=track_stats,
                 )
 
+            slow_updated = (step + 1) % self.slow_interval == 0
+            if slow_updated:
+                last_h_before = previous_state.h
+                last_h_after = state.h
+                last_slow_update_step = step + 1
+                slow_updates += 1
             phase_metrics = {
                 "z": metrics["z"],
                 "h": metrics["h"],
@@ -829,13 +843,24 @@ class IRL3Computer(nn.Module):
                 z_rms.append(metrics["z_rms"].mean())
                 h_rms.append(metrics["h_rms"].mean())
                 m_rms.append(metrics["m_rms"].mean())
+                slow_update_masks.append(
+                    anchor.new_tensor(float(slow_updated), dtype=torch.float32)
+                )
+                fast = (metrics["z"] + metrics["m"]) / 2.0
+                fast_mean = fast.mean()
+                fast_residuals.append(fast_mean)
                 joint = (metrics["z"] + metrics["h"] + metrics["m"]) / 3.0
                 joint_mean = joint.mean()
                 joint_residuals.append(joint_mean)
+                if previous_fast is not None:
+                    fast_contraction_ratios.append(
+                        fast_mean / previous_fast.clamp_min(1e-12)
+                    )
                 if previous_joint is not None:
                     contraction_ratios.append(
                         joint_mean / previous_joint.clamp_min(1e-12)
                     )
+                previous_fast = fast_mean
                 previous_joint = joint_mean
 
             if active is not None and not bool(active.any()):
@@ -855,12 +880,19 @@ class IRL3Computer(nn.Module):
         z_denominator = final_state.z.float().square().mean().clamp_min(1e-6)
         h_denominator = final_state.h.float().square().mean().clamp_min(1e-6)
         m_denominator = final_state.m.float().square().mean().clamp_min(1e-6)
-        equilibrium_loss = (
+        equilibrium_z_residual = (
             (state.z - previous_state.z).float().square().mean() / z_denominator
-            + (state.h - previous_state.h).float().square().mean() / h_denominator
-            + self.memory_equilibrium_weight
-            * (state.m - previous_state.m).float().square().mean()
-            / m_denominator
+        )
+        equilibrium_h_residual = (
+            (last_h_after - last_h_before).float().square().mean() / h_denominator
+        )
+        equilibrium_m_residual = (
+            (state.m - previous_state.m).float().square().mean() / m_denominator
+        )
+        equilibrium_loss = (
+            equilibrium_z_residual
+            + equilibrium_h_residual
+            + self.memory_equilibrium_weight * equilibrium_m_residual
         )
         ponder_loss = expected_steps.mean()
 
@@ -874,9 +906,19 @@ class IRL3Computer(nn.Module):
             * write_gate
             * self.writeback_scale.to(solution.dtype)
         )
-
         diagnostics: Optional[IRL3Diagnostics] = None
         if track_stats:
+            correction_rms = _rms(
+                correction,
+                tuple(range(correction.dim())),
+            ).squeeze()
+            writeback_to_anchor_ratio = torch.linalg.vector_norm(
+                correction.float()
+            ) / torch.linalg.vector_norm(anchor.float()).clamp_min(1e-12)
+            last_h_update_rms = _rms(
+                last_h_after - last_h_before,
+                tuple(range(last_h_after.dim())),
+            ).squeeze()
             empty = anchor.new_empty(0, dtype=torch.float32)
 
             def stack(values: List[torch.Tensor]) -> torch.Tensor:
@@ -897,12 +939,22 @@ class IRL3Computer(nn.Module):
                 z_rms=stack(z_rms),
                 h_rms=stack(h_rms),
                 m_rms=stack(m_rms),
+                slow_update_mask=stack(slow_update_masks),
+                fast_residual=stack(fast_residuals),
                 joint_residual=stack(joint_residuals),
+                fast_contraction_ratios=stack(fast_contraction_ratios),
                 contraction_ratios=stack(contraction_ratios),
-                writeback_rms=correction.float().square().mean().sqrt(),
+                equilibrium_z_residual=equilibrium_z_residual,
+                equilibrium_h_residual=equilibrium_h_residual,
+                equilibrium_m_residual=equilibrium_m_residual,
+                last_h_update_rms=last_h_update_rms,
+                writeback_rms=correction_rms,
+                writeback_to_anchor_ratio=writeback_to_anchor_ratio,
                 expected_steps=expected_steps.squeeze(-1).squeeze(-1),
                 step_counts=step_counts,
                 iterations=iterations_used,
+                slow_updates=slow_updates,
+                last_slow_update_step=last_slow_update_step,
                 converged_fraction=float(
                     step_counts.lt(depth).float().mean().detach().cpu()
                 ),

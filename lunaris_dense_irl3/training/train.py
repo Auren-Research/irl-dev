@@ -421,10 +421,6 @@ def train(
 
     logger = MetricLogger(config.logging, config, context)
     logger.last_tokens = state.tokens_seen
-    flops_per_token = estimate_training_flops_per_token(
-        config.model,
-        int(config.data.sequence_length),
-    )
     _print_startup(
         config,
         context,
@@ -459,6 +455,7 @@ def train(
     window_mtp = torch.zeros((), device=context.device)
     window_ponder = torch.zeros((), device=context.device)
     window_equilibrium = torch.zeros((), device=context.device)
+    window_flops_per_token = 0.0
     window_steps = 0
     latest_grad_norm = torch.zeros((), device=context.device)
     latest_validation: Dict[str, float] = {}
@@ -485,6 +482,13 @@ def train(
                     state.step,
                     config.model,
                     config.objectives,
+                )
+                step_flops_per_token = estimate_training_flops_per_token(
+                    config.model,
+                    int(config.data.sequence_length),
+                    recurrent_depth=auxiliary.compute_depth,
+                    gradient_horizon=auxiliary.gradient_horizon,
+                    mtp_active_heads=auxiliary.mtp_active_heads,
                 )
                 step_loss = torch.zeros((), device=context.device)
                 step_ce = torch.zeros((), device=context.device)
@@ -588,6 +592,7 @@ def train(
                 window_mtp.add_(step_mtp)
                 window_ponder.add_(step_ponder)
                 window_equilibrium.add_(step_equilibrium)
+                window_flops_per_token += step_flops_per_token
                 window_steps += 1
 
                 if profiler is not None:
@@ -624,6 +629,9 @@ def train(
                         )
                     )
                     averaged = context.reduce_mean(averaged)
+                    interval_flops_per_token = window_flops_per_token / max(
+                        1, window_steps
+                    )
                     current_lr = float(optimizers.optimizers[0].param_groups[0]["lr"])
                     metrics: Dict[str, Any] = {
                         "step": state.step,
@@ -644,12 +652,15 @@ def train(
                         "mtp_loss_weight": auxiliary.mtp_loss_weight,
                         "ponder_weight": auxiliary.ponder_weight,
                         "equilibrium_weight": (auxiliary.equilibrium_weight),
+                        "analytic_training_flops_per_token": (
+                            interval_flops_per_token
+                        ),
                         "world_size": context.world_size,
                     }
                     metrics.update(
                         logger.throughput(
                             tokens_seen=state.tokens_seen,
-                            flops_per_token=flops_per_token,
+                            flops_per_token=interval_flops_per_token,
                         )
                     )
                     metrics.update(memory_metrics(context.device))
@@ -661,6 +672,7 @@ def train(
                     window_mtp.zero_()
                     window_ponder.zero_()
                     window_equilibrium.zero_()
+                    window_flops_per_token = 0.0
                     window_steps = 0
 
                 should_checkpoint = (

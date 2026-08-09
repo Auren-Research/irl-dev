@@ -76,6 +76,57 @@ def test_shared_program_supports_multiple_compute_depths() -> None:
     assert depth_six.diagnostics.z_update_rms.shape == (6,)
     assert depth_six.diagnostics.h_update_rms[0].item() == 0.0
     assert depth_six.diagnostics.h_update_rms[1].item() > 0.0
+    assert depth_six.diagnostics.slow_update_mask.tolist() == [
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+    ]
+    assert depth_six.diagnostics.fast_residual.shape == (6,)
+    assert depth_six.diagnostics.fast_contraction_ratios.shape == (5,)
+
+
+def test_h_equilibrium_uses_last_meaningful_slow_transition() -> None:
+    torch.manual_seed(301)
+    config = tiny_config(irl3_slow_update_interval=3)
+    computer = IRL3Computer(config).eval()
+    anchor = torch.randn(1, 5, config.d_model)
+    position_ids = torch.arange(5).unsqueeze(0)
+
+    with torch.no_grad():
+        result = computer(
+            anchor,
+            position_ids=position_ids,
+            compute_depth=5,
+            halt_mode="fixed",
+            return_stats=True,
+        )
+        shallow = computer(
+            anchor,
+            position_ids=position_ids,
+            compute_depth=2,
+            halt_mode="fixed",
+            return_stats=True,
+        )
+
+    diagnostics = result.diagnostics
+    assert diagnostics is not None
+    assert diagnostics.slow_updates == 1
+    assert diagnostics.last_slow_update_step == 3
+    assert diagnostics.slow_update_mask.tolist() == [0.0, 0.0, 1.0, 0.0, 0.0]
+    assert diagnostics.h_update_rms[2] > 0
+    assert diagnostics.h_update_rms[3:].count_nonzero() == 0
+    assert diagnostics.equilibrium_h_residual > 0
+    assert diagnostics.last_h_update_rms > 0
+
+    shallow_diagnostics = shallow.diagnostics
+    assert shallow_diagnostics is not None
+    assert shallow_diagnostics.slow_updates == 0
+    assert shallow_diagnostics.last_slow_update_step == 0
+    assert shallow_diagnostics.equilibrium_h_residual == 0
+    assert shallow_diagnostics.last_h_update_rms == 0
 
 
 def test_read_think_memory_strategy_and_halting_receive_gradients() -> None:

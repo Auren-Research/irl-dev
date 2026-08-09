@@ -173,6 +173,49 @@ def test_depth_override_changes_computation_without_parameters() -> None:
     assert not torch.allclose(shallow, deep)
 
 
+def test_writeback_off_is_same_checkpoint_evaluation_ablation() -> None:
+    torch.manual_seed(381)
+    config = tiny_config()
+    model = LunarisIRL3ForCausalLM(config).eval()
+    input_ids = torch.randint(0, config.vocab_size, (1, 7))
+    with torch.no_grad():
+        enabled = model(
+            input_ids,
+            compute_depth=4,
+            return_irl3_stats=True,
+        )
+        disabled_shallow = model(
+            input_ids,
+            compute_depth=2,
+            disable_irl3_writeback=True,
+            return_irl3_stats=True,
+        )
+        disabled_deep = model(
+            input_ids,
+            compute_depth=7,
+            disable_irl3_writeback=True,
+        )
+
+    assert enabled.logits is not None
+    assert disabled_shallow.logits is not None and disabled_deep.logits is not None
+    assert not torch.allclose(enabled.logits, disabled_shallow.logits)
+    torch.testing.assert_close(
+        disabled_shallow.logits,
+        disabled_deep.logits,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert disabled_shallow.writeback_disabled
+    diagnostics = disabled_shallow.irl3_diagnostics
+    assert diagnostics is not None
+    assert diagnostics.writeback_rms > 0
+    assert diagnostics.writeback_to_anchor_ratio > 0
+
+    model.train()
+    with pytest.raises(ValueError, match="evaluation-only"):
+        model(input_ids, disable_irl3_writeback=True)
+
+
 def test_persistent_generation_state_and_generation_path() -> None:
     torch.manual_seed(39)
     config = tiny_config(irl3_persist_state=True)

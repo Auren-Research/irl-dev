@@ -16,6 +16,7 @@ from lunaris_dense_irl2.training.distributed import fsdp_mesh_shape
 
 from ..model import LunarisIRL3ForCausalLM
 from .config import TrainConfig
+from .logging import estimate_training_flops_breakdown
 
 
 def _configuration_fingerprint(config: TrainConfig) -> str:
@@ -107,6 +108,13 @@ def build_preflight_report(
             math.ceil(config.training.max_tokens / tokens_per_step),
         )
     planned_tokens = max_steps * tokens_per_step
+    flops = estimate_training_flops_breakdown(
+        config.model,
+        int(config.data.sequence_length),
+        recurrent_depth=config.model.irl3_train_steps,
+        gradient_horizon=config.model.irl3_gradient_horizon,
+        mtp_active_heads=config.model.mtp_num_heads,
+    )
 
     strategy = config.parallel.strategy
     if world_size == 1:
@@ -192,6 +200,7 @@ def build_preflight_report(
             "optimizer_steps": max_steps,
             "planned_tokens": planned_tokens,
         },
+        "analytic_flops_per_observed_token": flops,
         "memory_lower_bound": {
             "persistent_state_gib_per_rank": persistent_state_gib,
             "bytes_per_parameter_assumption": persistent_bytes_per_parameter,

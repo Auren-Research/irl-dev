@@ -11,6 +11,11 @@ import yaml
 from lunaris_dense_irl3 import LunarisIRL3Config, LunarisIRL3ForCausalLM
 from lunaris_dense_irl3.training.config import ObjectiveConfig, TrainConfig
 from lunaris_dense_irl3.training.export_checkpoint import export_checkpoint
+from lunaris_dense_irl3.training.logging import (
+    _state_attention_flops,
+    estimate_forward_flops_per_token,
+    estimate_training_flops_breakdown,
+)
 from lunaris_dense_irl3.training.preflight import build_preflight_report
 from lunaris_dense_irl3.training.schedules import auxiliary_schedule
 from lunaris_dense_irl3.training.train import train
@@ -109,6 +114,65 @@ def test_compute_and_credit_curriculum_is_deterministic() -> None:
     assert end.ponder_weight == 0.01
     assert end.equilibrium_weight == 0.02
     assert end.mtp_active_heads == 2
+
+
+def test_flops_account_for_slot_rows_slow_ticks_mtp_and_checkpointing() -> None:
+    config = LunarisIRL3Config.debug(
+        irl3_num_latents=3,
+        irl3_memory_slots=2,
+        irl3_slow_slots=1,
+        irl3_slow_update_interval=3,
+        irl3_train_steps=6,
+        irl3_gradient_horizon=2,
+        mtp_num_heads=2,
+        mtp_ffn_hidden_dim=80,
+        use_gradient_checkpointing=True,
+        gradient_checkpointing_policy="computer",
+    )
+    s = config.state_dim
+    assert _state_attention_flops(3, 2, s) == (
+        4.0 * (3 + 2) * s * s + 4.0 * 3 * 2 * s
+    )
+
+    depth_five = estimate_forward_flops_per_token(
+        config,
+        32,
+        recurrent_depth=5,
+        mtp_active_heads=2,
+    )
+    depth_six = estimate_forward_flops_per_token(
+        config,
+        32,
+        recurrent_depth=6,
+        mtp_active_heads=2,
+    )
+    depth_four = estimate_forward_flops_per_token(
+        config,
+        32,
+        recurrent_depth=4,
+        mtp_active_heads=2,
+    )
+    fast_step = depth_five["recurrent_fast"] / 5
+    slow_tick = depth_six["recurrent_slow"] / 2
+    assert depth_five["recurrent_slow"] == depth_four["recurrent_slow"]
+    assert depth_six["total"] - depth_five["total"] == fast_step + slow_tick
+    assert depth_six["mtp"] > 0
+
+    training = estimate_training_flops_breakdown(
+        config,
+        32,
+        recurrent_depth=6,
+        gradient_horizon=2,
+        mtp_active_heads=2,
+    )
+    assert training["checkpoint_recompute"] == (
+        training["forward_state_initialization"]
+        + training["forward_anchor_kv_projection"]
+        + training["forward_recurrent_fast"]
+        + training["forward_recurrent_slow"]
+        + training["forward_writeback"]
+    )
+    assert training["training_total"] > training["forward_total"]
 
 
 def _payload(
@@ -250,3 +314,4 @@ def test_cpu_training_checkpoint_resume_export_and_preflight(tmp_path: Path) -> 
     assert report["architecture"]["fast_latents"] == 2
     assert report["topology"]["strategy"] == "fsdp2"
     assert report["budget"]["tokens_per_step"] == 32
+    assert report["analytic_flops_per_observed_token"]["training_total"] > 0

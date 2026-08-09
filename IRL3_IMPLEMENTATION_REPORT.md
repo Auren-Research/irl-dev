@@ -97,6 +97,26 @@ available for test-time compute scaling.
   an early curriculum checkpoint reloads even when some modules have not yet
   entered the graph.
 
+### Pre-qualification measurement corrections
+
+- State-attention FLOPs now count Q/K/V/O projection rows using the actual
+  Z/M/H query and key/value slot counts, plus attention mixing, FFNs, all
+  recurrent gates/projections, exact slow ticks, write-back, and active MTP
+  horizons.
+- Training FLOPs distinguish full forward work from the differentiable credit
+  horizon and add the selected gradient-checkpoint recomputation explicitly.
+- The H equilibrium numerator retains the transition immediately before and
+  after the last executed slow tick. A trailing non-tick can no longer make a
+  real H update appear to have zero residual.
+- Diagnostics expose the slow-tick mask/count, last tick, fast Z/M contraction,
+  per-state equilibrium terms, and correction-to-anchor norm ratio.
+- The same exported checkpoint is now evaluated in fixed, ACT-soft,
+  adaptive-hard, and write-back-off modes. OFF executes the computer but does
+  not add its correction to the anchor.
+- The parameter-matched IRL-2 run is mandatory. Training budgets were shortened
+  to 200 IRL-3 and 60 IRL-2 steps so all controls and reporting fit the bounded
+  hardware window without changing the 135M architecture profiles.
+
 ## 4. Files added or changed
 
 Core architecture:
@@ -140,6 +160,7 @@ Tests and documentation:
 - `tests/test_irl3_computer.py`
 - `tests/test_irl3_model.py`
 - `tests/test_irl3_training.py`
+- `tests/test_irl3_qualification.py`
 - `IRL3_ARCHITECTURE.md`
 - `IRL3_MI300X_QUALIFICATION.md`
 - `IRL3_IMPLEMENTATION_REPORT.md`
@@ -152,7 +173,7 @@ Final local results:
 
 ```text
 python -m pytest -q
-43 passed
+48 passed
 ```
 
 The suite includes finite forward/backward, nonzero gradients through every
@@ -160,7 +181,9 @@ IRL-3 subsystem, multiple depths, staggered per-prefix halting, no-future
 leakage, packed-document isolation, cache parity, persistence, generation,
 MTP, gradient checkpointing, BF16 forward/backward, save/load, real CPU
 optimizer steps, DCP resume after an early inactive-module checkpoint, export,
-and meta-device preflight.
+meta-device preflight, slot-aware FLOPs accounting, arbitrary slow-clock
+equilibrium semantics, same-checkpoint write-back bypass, and qualification
+summary controls.
 
 Additional verification:
 
@@ -189,10 +212,22 @@ Recurrent depth changes no parameter counts.
 
 ## 7. Expected compute and memory
 
-The analytic logger estimates approximately **1.934 billion training FLOPs per
-token** for the MI300X profile at depth six, or **31.68 TFLOPs per optimizer
-step** at 16,384 tokens. This is an operation-count estimate; small-slot kernel
-efficiency makes measured throughput authoritative.
+The corrected analytic breakdown estimates approximately **1.254 billion
+forward FLOPs per observed token** and **4.025 billion executed training FLOPs
+per observed token** for the MI300X profile at depth six with two active MTP
+horizons. At 16,384 observed tokens, that is **65.94 TFLOPs per optimizer
+step**. The training total includes a two-times differentiable-forward backward
+approximation over the four-step recurrent credit horizon and the extra
+recurrent-computer forward caused by checkpoint recomputation.
+
+The count includes token Transformer projections/mixing/FFNs, problem
+conditioning, anchor K/V, slot-row-aware state attention, anchor mixing,
+fast/slow FFNs, priors and gates, exact slow ticks, halting/phase networks,
+memory erase/add/write, token write-back, the LM head, and active MTP heads. It
+omits norms, nonlinearities, softmax/masking, reductions, elementwise gates,
+and launch overhead. Small-slot efficiency makes measured throughput
+authoritative; this estimate is not used as a favorable substitute for the
+MI300X measurements.
 
 With the single-GPU FP32-master AdamW path, parameters, gradients, and two
 optimizer moments have a persistent lower bound of about **2.01 GiB**. This
@@ -223,6 +258,9 @@ occupancy, and tokens/second are deliberately deferred to the MI300X sweep.
   ponder warmup;
 - whether extra fixed inference depth improves, saturates, or degrades CE on a
   short-trained checkpoint;
+- whether same-checkpoint write-back OFF measurably changes CE and whether the
+  correction-to-anchor ratio is material;
+- whether ACT-soft and adaptive-hard differ at matched 4/8/12 budgets;
 - whether adaptive per-prefix freezing yields measurable latency savings;
 - the interpretable difference from the smaller-token-budget IRL-2 control.
 
@@ -246,11 +284,12 @@ python -m lunaris_dense_irl3.training.train \
 
 python -m lunaris_dense_irl3.training.train \
   --config training_profiles/irl3_135m_1x_mi300x_qualification.yaml \
-  --max-steps 245 \
+  --max-steps 205 \
   --resume auto
 ```
 
-The exact export, fixed/adaptive depth benchmark, IRL-2 control, and summary
+The exact export, fixed/ACT/adaptive/write-back-off benchmarks, guaranteed
+IRL-2 control, and summary
 commands are encoded in `scripts/run_irl3_mi300x_qualification.sh` and listed
 with recovery guidance in
 [IRL3_MI300X_QUALIFICATION.md](IRL3_MI300X_QUALIFICATION.md).
@@ -260,14 +299,15 @@ with recovery guidance in
 | Window | Work |
 |---:|---|
 | 0:00-0:15 | runtime/ROCm report and repository tests |
-| 0:15-0:35 | data reuse/preparation and both preflight reports |
-| 0:35-0:50 | four-step BF16 full-path smoke |
-| 0:50-2:50 | 134.8M IRL-3 architecture run |
-| 2:50-3:05 | checkpoint reload, extension, and portable export |
-| 3:05-3:35 | fixed depths 2/4/6/8/12 and adaptive budgets 4/8/12 |
-| 3:35-3:50 | optional matched IRL-2 control or reporting reserve |
-| by 3:50 | machine JSON and concise Markdown summary complete |
+| 0:15-0:30 | data reuse/preparation and both preflight reports |
+| 0:30-0:42 | four-step BF16 full-path smoke |
+| 0:42-2:22 | 200-step 134.8M IRL-3 architecture run |
+| 2:22-2:32 | checkpoint reload, extension, and portable export |
+| 2:32-3:02 | guaranteed 60-step matched IRL-2 control and depth sweep |
+| 3:02-3:37 | fixed 2/4/6/8/12, ACT/adaptive 4/8/12, and write-back OFF |
+| 3:37-3:45 | machine JSON and concise Markdown summary |
+| 3:45-3:50 | recovery reserve |
 
-The optional baseline begins only if at least 40 minutes remain. The outer
-3h50 timeout leaves a ten-minute recovery margin inside the hard four-hour
-allocation.
+The outer 3h50 timeout leaves a ten-minute recovery margin inside the hard
+four-hour allocation. The architecture profile is unchanged; only short-run
+training budgets were reduced to make the control and all ablations mandatory.

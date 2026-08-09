@@ -15,6 +15,7 @@ import torch
 from lunaris_dense_irl2 import LunarisDenseForCausalLM
 from lunaris_dense_irl2.training.data import MemoryMappedTokenDataset
 from lunaris_dense_irl3 import LunarisIRL3ForCausalLM
+from lunaris_dense_irl3.training.logging import estimate_forward_flops_per_token
 
 
 def _parse_depths(value: str) -> list[int]:
@@ -61,9 +62,17 @@ def _irl3_diagnostics(output: Any) -> dict[str, Any]:
         "z_rms",
         "h_rms",
         "m_rms",
+        "slow_update_mask",
+        "fast_residual",
         "joint_residual",
+        "fast_contraction_ratios",
         "contraction_ratios",
+        "equilibrium_z_residual",
+        "equilibrium_h_residual",
+        "equilibrium_m_residual",
+        "last_h_update_rms",
         "writeback_rms",
+        "writeback_to_anchor_ratio",
         "expected_steps",
         "step_counts",
     )
@@ -74,6 +83,8 @@ def _irl3_diagnostics(output: Any) -> dict[str, Any]:
     }
     result.update(
         iterations=diagnostics.iterations,
+        slow_updates=diagnostics.slow_updates,
+        last_slow_update_step=diagnostics.last_slow_update_step,
         converged_fraction=diagnostics.converged_fraction,
         halt_mode=diagnostics.halt_mode,
     )
@@ -123,11 +134,14 @@ def benchmark(
     repeats: int,
     precision: str,
     halt_mode: str,
+    disable_writeback: bool,
 ) -> dict[str, Any]:
     if not torch.cuda.is_available():
         raise RuntimeError("Recurrent-depth qualification requires a CUDA/ROCm device")
     device = torch.device("cuda")
     dtype = _dtype(precision)
+    if architecture != "irl3" and disable_writeback:
+        raise ValueError("Write-back ablation is available only for IRL-3")
     if architecture == "irl3":
         model: Any = LunarisIRL3ForCausalLM.from_pretrained(checkpoint)
     else:
@@ -157,6 +171,7 @@ def benchmark(
                 compute_depth=depth,
                 halt_mode=halt_mode,
                 return_irl3_stats=False,
+                disable_irl3_writeback=disable_writeback,
             )
         else:
             forward_kwargs.update(n_iters=depth, return_irl_stats=False)
@@ -178,6 +193,7 @@ def benchmark(
             elapsed_samples.append(time.perf_counter() - start)
         median_elapsed = statistics.median(elapsed_samples)
         timed_peak_memory = torch.cuda.max_memory_allocated(device) / 1024**3
+        torch.cuda.reset_peak_memory_stats(device)
         diagnostic_kwargs = dict(forward_kwargs)
         diagnostic_kwargs["labels"] = device_batches[0]
         if architecture == "irl3":
@@ -185,27 +201,58 @@ def benchmark(
         else:
             diagnostic_kwargs["return_irl_stats"] = True
         diagnostic_output = model(device_batches[0], **diagnostic_kwargs)
+        torch.cuda.synchronize(device)
+        diagnostic_peak_memory = torch.cuda.max_memory_allocated(device) / 1024**3
         predicted_tokens = repeats * batches * batch_size * (sequence_length - 1)
+        diagnostics = (
+            _irl3_diagnostics(diagnostic_output)
+            if architecture == "irl3"
+            else _irl2_diagnostics(diagnostic_output)
+        )
+        analytic_budget_flops: float | None = None
+        analytic_diagnostic_flops: float | None = None
+        if architecture == "irl3":
+            analytic_budget_flops = estimate_forward_flops_per_token(
+                model.config,
+                sequence_length,
+                recurrent_depth=depth,
+                mtp_active_heads=0,
+            )["total"]
+            diagnostic_depth = int(diagnostics.get("iterations", depth))
+            analytic_diagnostic_flops = estimate_forward_flops_per_token(
+                model.config,
+                sequence_length,
+                recurrent_depth=diagnostic_depth,
+                mtp_active_heads=0,
+            )["total"]
         record: dict[str, Any] = {
             "depth": depth,
             "halt_mode": halt_mode if architecture == "irl3" else "irl2",
+            "evaluation_variant": (
+                "writeback_off"
+                if disable_writeback
+                else (halt_mode if architecture == "irl3" else "irl2")
+            ),
+            "writeback_disabled": bool(disable_writeback),
             "cross_entropy_mean": statistics.fmean(cross_entropies),
             "cross_entropy_samples": cross_entropies,
             "elapsed_seconds_samples": elapsed_samples,
+            "median_elapsed_seconds": median_elapsed,
+            "median_batch_latency_milliseconds": (
+                1000.0 * median_elapsed / batches
+            ),
             "median_tokens_per_second": predicted_tokens / (repeats * median_elapsed),
             "peak_memory_gib": timed_peak_memory,
-            "diagnostic_peak_memory_gib": (
-                torch.cuda.max_memory_allocated(device) / 1024**3
+            "diagnostic_peak_memory_gib": diagnostic_peak_memory,
+            "analytic_budget_forward_flops_per_token": analytic_budget_flops,
+            "analytic_diagnostic_forward_flops_per_token": (
+                analytic_diagnostic_flops
             ),
-            "diagnostics": (
-                _irl3_diagnostics(diagnostic_output)
-                if architecture == "irl3"
-                else _irl2_diagnostics(diagnostic_output)
-            ),
+            "diagnostics": diagnostics,
         }
         records.append(record)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "architecture": architecture,
         "checkpoint": str(checkpoint.resolve()),
         "parameters": parameter_count,
@@ -215,6 +262,8 @@ def benchmark(
         "batch_size": batch_size,
         "batches": batches,
         "repeats": repeats,
+        "halt_mode": halt_mode if architecture == "irl3" else "irl2",
+        "writeback_disabled": bool(disable_writeback),
         "records": records,
     }
 
@@ -233,6 +282,11 @@ def main() -> None:
     parser.add_argument(
         "--halt-mode", choices=("fixed", "act", "adaptive"), default="fixed"
     )
+    parser.add_argument(
+        "--disable-writeback",
+        action="store_true",
+        help="Evaluation-only IRL-3 correction ablation on the same checkpoint",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if min(args.sequence_length, args.batch_size, args.batches, args.repeats) <= 0:
@@ -250,6 +304,7 @@ def main() -> None:
         repeats=args.repeats,
         precision=args.precision,
         halt_mode=args.halt_mode,
+        disable_writeback=args.disable_writeback,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
