@@ -1,0 +1,101 @@
+model:
+  vocab_size: 65536
+  d_model: 128
+  n_layers: 3
+  irl3_coda_layers: 1
+  n_heads: 4
+  n_kv_heads: 2
+  ffn_hidden_dim: 256
+  max_seq_len: 512
+  attention_pattern: "LG"
+  local_window: 128
+  irl3_state_dim: 96
+  irl3_state_heads: 4
+  irl3_state_ffn_dim: 192
+  irl3_num_latents: 4
+  irl3_memory_slots: 4
+  irl3_slow_slots: 1
+  irl3_anchor_window: 32
+  irl3_train_steps: 4
+  irl3_eval_steps: 6
+  irl3_max_steps: 12
+  irl3_min_steps: 2
+  irl3_gradient_horizon: 4
+  mtp_num_heads: 2
+  mtp_ffn_hidden_dim: 128
+  pad_token_id: 1
+  bos_token_id: 2
+  eos_token_id: 3
+
+data:
+  train_dir: "data/qualification/train"
+  validation_dir: "data/qualification/validation"
+  sequence_length: 512
+  num_workers: 2
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  mmap_cache_size: 2
+
+optimizer:
+  name: "adamw"
+  learning_rate: 0.001
+  fused: "auto"
+
+schedule:
+  name: "wsd"
+  warmup_steps: 1
+  stable_steps: 2
+  decay_steps: 1
+
+parallel:
+  strategy: "none"
+  precision: "bf16"
+  reduce_dtype: "fp32"
+  compile: false
+  regional_compile: true
+
+training:
+  micro_batch_size: 2
+  gradient_accumulation_steps: 1
+  max_steps: 4
+  gradient_clip: 1.0
+  loss_chunk_size: 256
+  loss_backend: "chunked"
+  z_loss_coefficient: 0.0001
+  fail_on_nonfinite: true
+
+objectives:
+  compute_start_steps: 2
+  compute_ramp_steps: 2
+  depth_sampling: "uniform"
+  gradient_horizon_start: 2
+  gradient_horizon_ramp_steps: 2
+  ponder_weight: 0.001
+  ponder_warmup_steps: 1
+  ponder_ramp_steps: 1
+  equilibrium_weight: 0.001
+  equilibrium_warmup_steps: 0
+  equilibrium_ramp_steps: 1
+  mtp_loss_weight: 0.2
+  mtp_warmup_steps: 1
+  mtp_ramp_steps: 1
+  mtp_horizon_interval: 1
+
+validation:
+  interval: 2
+  batches: 2
+  at_start: true
+
+checkpoint:
+  directory: "qualification_artifacts/irl3/checkpoints/smoke"
+  interval: 2
+  keep_last: 2
+  async_save: false
+  resume: "auto"
+  save_final: true
+
+logging:
+  interval: 1
+  jsonl_path: "qualification_artifacts/irl3/smoke_metrics.jsonl"
+  profile_steps: 0

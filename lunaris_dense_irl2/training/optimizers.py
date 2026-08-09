@@ -207,6 +207,37 @@ def _adamw_groups(
     ]
 
 
+def _eager_initialize_adamw_state(optimizer: torch.optim.AdamW) -> None:
+    """Allocate slots for every parameter before the first checkpoint.
+
+    Curriculum-controlled modules can legitimately be absent from the graph
+    during early steps. Native AdamW creates their state lazily, but a fresh
+    optimizer used by Distributed Checkpoint describes every parameter. Eager
+    zero state makes save/load schemas topology- and curriculum-independent
+    without changing the first update.
+    """
+
+    for group in optimizer.param_groups:
+        state_on_parameter = bool(group.get("capturable", False)) or bool(
+            group.get("fused", False)
+        )
+        for parameter in group["params"]:
+            state = optimizer.state[parameter]
+            if state:
+                continue
+            state["step"] = torch.zeros(
+                (),
+                dtype=torch.float32,
+                device=parameter.device if state_on_parameter else "cpu",
+            )
+            state["exp_avg"] = torch.zeros_like(
+                parameter, memory_format=torch.preserve_format
+            )
+            state["exp_avg_sq"] = torch.zeros_like(
+                parameter, memory_format=torch.preserve_format
+            )
+
+
 def build_optimizers(
     model: nn.Module,
     config: OptimizerConfig,
@@ -230,6 +261,7 @@ def build_optimizers(
             eps=config.epsilon,
             fused=_resolve_fused(config.fused, all_parameters),
         )
+        _eager_initialize_adamw_state(adamw)
         bundle = OptimizerBundle([adamw])
         restore_base_learning_rates(bundle, config)
         return bundle
@@ -266,6 +298,7 @@ def build_optimizers(
         eps=config.epsilon,
         fused=_resolve_fused(config.fused, adamw_parameters),
     )
+    _eager_initialize_adamw_state(adamw)
     bundle = OptimizerBundle([mona, adamw])
     restore_base_learning_rates(bundle, config)
     return bundle
@@ -278,8 +311,8 @@ def _gradient_group(name: str) -> str:
         return "attention"
     if "mtp_predictor" in name:
         return "mtp"
-    if ".irl." in name:
-        return "irl"
+    if ".irl." in name or ".computer." in name:
+        return "recurrent_computer"
     if "embedding" in name or "lm_head" in name:
         return "embedding_and_head"
     return "norms_and_scales"

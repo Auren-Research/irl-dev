@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lunaris-dense-irl2"
-version = "0.4.0"
-description = "A clean dense causal language model built around anchored IRL-2 refinement."
+name = "lunaris-dense-irl3"
+version = "0.1.0"
+description = "Lunaris IRL-3 stateful latent recurrent language model, with IRL-2 retained as a baseline."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -22,9 +22,12 @@ monitoring = ["wandb>=0.19"]
 lunaris-train = "lunaris_dense_irl2.training.train:main"
 lunaris-export = "lunaris_dense_irl2.training.export_checkpoint:main"
 lunaris-preflight = "lunaris_dense_irl2.training.preflight:main"
+lunaris-irl3-train = "lunaris_dense_irl3.training.train:main"
+lunaris-irl3-export = "lunaris_dense_irl3.training.export_checkpoint:main"
+lunaris-irl3-preflight = "lunaris_dense_irl3.training.preflight:main"
 
 [tool.setuptools.packages.find]
-include = ["lunaris_dense_irl2*"]
+include = ["lunaris_dense_irl2*", "lunaris_dense_irl3*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
