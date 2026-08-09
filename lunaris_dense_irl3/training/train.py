@@ -517,7 +517,7 @@ def train(
                                 z_loss_coefficient=(config.training.z_loss_coefficient),
                                 loss_backend=config.training.loss_backend,
                                 compute_depth=auxiliary.compute_depth,
-                                halt_mode="act",
+                                halt_mode=config.objectives.training_halt_mode,
                                 gradient_horizon=auxiliary.gradient_horizon,
                                 mtp_loss_weight=auxiliary.mtp_loss_weight,
                                 mtp_active_heads=auxiliary.mtp_active_heads,

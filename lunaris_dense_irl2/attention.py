@@ -210,6 +210,11 @@ class GroupedQueryAttention(nn.Module):
         supported = (
             _FLEX_ATTENTION_AVAILABLE
             and query.device.type == "cuda"
+            # PyTorch's compiled FlexAttention kernels require at least a
+            # 16-wide query/key and value embedding on the ROCm backend.  Tiny
+            # correctness profiles can legitimately use narrower heads, so
+            # let the automatic backend select the portable SDPA path there.
+            and query.size(-1) >= 16
             and layer_cache is None
             and attention_mask is None
             and document_ids is None
@@ -219,8 +224,8 @@ class GroupedQueryAttention(nn.Module):
         if self.attention_backend == "flex" and not supported:
             raise RuntimeError(
                 "attention_backend=flex requires a CUDA/ROCm device, "
-                "FlexAttention support, no explicit masks/cache, and zero "
-                "attention dropout during training"
+                "FlexAttention support, head dimension >= 16, no explicit "
+                "masks/cache, and zero attention dropout during training"
             )
         return supported
 

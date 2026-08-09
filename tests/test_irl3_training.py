@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 import yaml
 
@@ -114,6 +115,17 @@ def test_compute_and_credit_curriculum_is_deterministic() -> None:
     assert end.ponder_weight == 0.01
     assert end.equilibrium_weight == 0.02
     assert end.mtp_active_heads == 2
+
+
+def test_training_halt_mode_is_explicit_and_rejects_adaptive() -> None:
+    model = LunarisIRL3Config.debug(mtp_num_heads=0)
+    fixed = ObjectiveConfig(mtp_loss_weight=0.0, training_halt_mode="fixed")
+    fixed.validate(model)
+    assert fixed.training_halt_mode == "fixed"
+
+    invalid = ObjectiveConfig(mtp_loss_weight=0.0, training_halt_mode="adaptive")
+    with pytest.raises(ValueError, match="training_halt_mode"):
+        invalid.validate(model)
 
 
 def test_flops_account_for_slot_rows_slow_ticks_mtp_and_checkpointing() -> None:

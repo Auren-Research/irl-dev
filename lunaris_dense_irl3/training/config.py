@@ -38,6 +38,7 @@ class ObjectiveConfig:
     compute_ramp_steps: int = 10_000
     depth_sampling: str = "log_uniform"
     depth_sampling_seed: int = 17
+    training_halt_mode: str = "act"
 
     gradient_horizon_start: int = 2
     gradient_horizon_ramp_steps: int = 10_000
@@ -76,6 +77,11 @@ class ObjectiveConfig:
                 "objectives.depth_sampling must be fixed, uniform, or log_uniform"
             )
         self.depth_sampling_seed = int(self.depth_sampling_seed)
+        self.training_halt_mode = self.training_halt_mode.lower()
+        if self.training_halt_mode not in {"act", "fixed"}:
+            raise ValueError(
+                "objectives.training_halt_mode must be act or fixed"
+            )
         nonnegative_steps = {
             "compute_ramp_steps": self.compute_ramp_steps,
             "gradient_horizon_ramp_steps": self.gradient_horizon_ramp_steps,

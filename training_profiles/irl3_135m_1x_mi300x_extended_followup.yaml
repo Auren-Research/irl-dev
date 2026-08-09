@@ -1,0 +1,93 @@
+model_profile: "../profiles/irl3_135m_mi300x_qualification.yaml"
+model:
+  use_gradient_checkpointing: true
+  gradient_checkpointing_policy: "computer"
+  track_irl3_stats: false
+
+data:
+  train_dir: "data/qualification/train"
+  validation_dir: "data/qualification/validation"
+  sequence_length: 4096
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  mmap_cache_size: 2
+  shuffle: true
+  seed: 1337
+
+optimizer:
+  name: "adamw"
+  learning_rate: 0.0006
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 0.00000001
+  fused: "auto"
+
+schedule:
+  name: "wsd"
+  warmup_steps: 40
+  stable_steps: 920
+  decay_steps: 40
+  min_lr_ratio: 0.1
+
+parallel:
+  strategy: "none"
+  precision: "bf16"
+  reduce_dtype: "fp32"
+  compile: false
+  regional_compile: true
+
+training:
+  micro_batch_size: 4
+  gradient_accumulation_steps: 1
+  max_steps: 1000
+  max_tokens: 16384000
+  seed: 1337
+  gradient_clip: 1.0
+  gradient_clip_mode: "global"
+  loss_chunk_size: 1024
+  loss_backend: "chunked"
+  z_loss_coefficient: 0.0001
+  fail_on_nonfinite: true
+
+objectives:
+  compute_start_steps: 2
+  compute_ramp_steps: 60
+  depth_sampling: "log_uniform"
+  depth_sampling_seed: 17
+  gradient_horizon_start: 2
+  gradient_horizon_ramp_steps: 60
+  ponder_weight: 0.001
+  ponder_warmup_steps: 50
+  ponder_ramp_steps: 50
+  equilibrium_weight: 0.001
+  equilibrium_warmup_steps: 10
+  equilibrium_ramp_steps: 40
+  mtp_loss_weight: 0.2
+  mtp_warmup_steps: 20
+  mtp_ramp_steps: 50
+  mtp_horizon_interval: 40
+  mtp_horizon_decay: 0.7
+
+validation:
+  interval: 200
+  batches: 8
+  at_start: false
+
+checkpoint:
+  directory: "qualification_artifacts/irl3/checkpoints/followup_extended"
+  interval: 200
+  keep_last: 3
+  async_save: false
+  resume: "none"
+  save_final: true
+  min_free_space_gib: 20.0
+
+logging:
+  interval: 10
+  jsonl_path: "qualification_artifacts/irl3/followup_extended_metrics.jsonl"
+  wandb_project: null
+  profile_steps: 0
+  peak_tflops_per_gpu: null

@@ -121,6 +121,133 @@ def _batches(
     ]
 
 
+def _sample_summary(values: list[float]) -> dict[str, float]:
+    if not values:
+        raise ValueError("Cannot summarize an empty sample")
+    return {
+        "mean": statistics.fmean(values),
+        "minimum": min(values),
+        "maximum": max(values),
+        "standard_deviation": statistics.pstdev(values),
+    }
+
+
+def _paired_tensor_metrics(
+    candidate: torch.Tensor,
+    reference: torch.Tensor,
+) -> tuple[float, float]:
+    if candidate.shape != reference.shape:
+        raise ValueError(
+            f"Compared recurrent tensors must match: {candidate.shape} != "
+            f"{reference.shape}"
+        )
+    candidate_fp32 = candidate.detach().float()
+    reference_fp32 = reference.detach().float()
+    reference_norm = torch.linalg.vector_norm(reference_fp32).clamp_min(1e-12)
+    candidate_norm = torch.linalg.vector_norm(candidate_fp32).clamp_min(1e-12)
+    relative_l2 = torch.linalg.vector_norm(candidate_fp32 - reference_fp32)
+    relative_l2 = relative_l2 / reference_norm
+    cosine = (candidate_fp32 * reference_fp32).sum()
+    cosine = cosine / (candidate_norm * reference_norm)
+    return float(relative_l2.cpu()), float(cosine.cpu())
+
+
+@torch.inference_mode()
+def _irl3_state_comparisons(
+    model: LunarisIRL3ForCausalLM,
+    device_batches: list[torch.Tensor],
+    *,
+    depths: list[int],
+    reference_depth: int,
+    comparison_batches: int,
+) -> dict[int, dict[str, Any]]:
+    """Compare complete fixed-budget recurrent solutions on paired prefixes."""
+
+    if comparison_batches <= 0 or comparison_batches > len(device_batches):
+        raise ValueError("state comparison batches must be in [1, benchmark batches]")
+    samples: dict[int, dict[str, list[float]]] = {
+        depth: {
+            "z_relative_l2": [],
+            "h_relative_l2": [],
+            "m_relative_l2": [],
+            "correction_relative_l2": [],
+            "z_cosine_similarity": [],
+            "h_cosine_similarity": [],
+            "m_cosine_similarity": [],
+            "correction_cosine_similarity": [],
+        }
+        for depth in depths
+    }
+    captured: dict[str, Any] = {}
+
+    def capture_result(_module: Any, _inputs: Any, output: Any) -> None:
+        captured["result"] = output
+
+    handle = model.computer.register_forward_hook(capture_result)
+
+    def solve(tokens: torch.Tensor, depth: int) -> Any:
+        captured.clear()
+        model(
+            tokens,
+            compute_depth=depth,
+            halt_mode="fixed",
+            return_irl3_stats=False,
+            logits_to_keep=1,
+        )
+        if "result" not in captured:
+            raise RuntimeError("IRL-3 computer hook did not capture a result")
+        return captured["result"]
+
+    try:
+        for tokens in device_batches[:comparison_batches]:
+            reference = solve(tokens, reference_depth)
+            for depth in depths:
+                candidate = (
+                    reference if depth == reference_depth else solve(tokens, depth)
+                )
+                pairs = {
+                    "z": (candidate.state.z, reference.state.z),
+                    "h": (candidate.state.h, reference.state.h),
+                    "m": (candidate.state.m, reference.state.m),
+                    "correction": (candidate.correction, reference.correction),
+                }
+                for name, (candidate_tensor, reference_tensor) in pairs.items():
+                    relative_l2, cosine = _paired_tensor_metrics(
+                        candidate_tensor,
+                        reference_tensor,
+                    )
+                    samples[depth][f"{name}_relative_l2"].append(relative_l2)
+                    samples[depth][f"{name}_cosine_similarity"].append(cosine)
+    finally:
+        handle.remove()
+
+    return {
+        depth: {name: _sample_summary(values) for name, values in metrics.items()}
+        for depth, metrics in samples.items()
+    }
+
+
+def _paired_ce_summary(
+    candidate: list[float],
+    reference: list[float],
+) -> dict[str, float]:
+    if len(candidate) != len(reference) or not candidate:
+        raise ValueError("Paired CE samples must be non-empty and equal length")
+    deltas = [value - baseline for value, baseline in zip(candidate, reference)]
+    mean = statistics.fmean(deltas)
+    standard_error = (
+        statistics.stdev(deltas) / len(deltas) ** 0.5 if len(deltas) > 1 else 0.0
+    )
+    return {
+        "mean": mean,
+        "standard_error": standard_error,
+        "confidence_95_low": mean - 1.96 * standard_error,
+        "confidence_95_high": mean + 1.96 * standard_error,
+        "minimum": min(deltas),
+        "maximum": max(deltas),
+    }
+
+
 @torch.inference_mode()
 def benchmark(
     *,
@@ -135,6 +262,9 @@ def benchmark(
     precision: str,
     halt_mode: str,
     disable_writeback: bool,
+    halt_threshold: float | None = None,
+    state_reference_depth: int | None = None,
+    state_comparison_batches: int = 1,
 ) -> dict[str, Any]:
     if not torch.cuda.is_available():
         raise RuntimeError("Recurrent-depth qualification requires a CUDA/ROCm device")
@@ -142,10 +272,18 @@ def benchmark(
     dtype = _dtype(precision)
     if architecture != "irl3" and disable_writeback:
         raise ValueError("Write-back ablation is available only for IRL-3")
+    if halt_threshold is not None and architecture != "irl3":
+        raise ValueError("Halt-threshold override is available only for IRL-3")
+    if halt_threshold is not None and not 0.0 < halt_threshold < 1.0:
+        raise ValueError("halt_threshold must be in (0, 1)")
     if architecture == "irl3":
         model: Any = LunarisIRL3ForCausalLM.from_pretrained(checkpoint)
+        if halt_threshold is not None:
+            model.computer.halt_threshold = float(halt_threshold)
+        resolved_halt_threshold: float | None = model.computer.halt_threshold
     else:
         model = LunarisDenseForCausalLM.from_pretrained(checkpoint)
+        resolved_halt_threshold = None
     model = model.to(device=device, dtype=dtype).eval()
     model.set_regional_compile(False)
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
@@ -157,8 +295,17 @@ def benchmark(
     host_batches = _batches(dataset, batch_size=batch_size, count=batches)
     device_batches = [tokens.to(device, non_blocking=False) for tokens in host_batches]
 
+    resolved_depths = list(depths)
+    if state_reference_depth is not None:
+        if architecture != "irl3" or halt_mode != "fixed":
+            raise ValueError(
+                "State comparisons require architecture=irl3 and halt_mode=fixed"
+            )
+        if state_comparison_batches > batches:
+            raise ValueError("state comparison batches cannot exceed benchmark batches")
+
     records: list[dict[str, Any]] = []
-    for depth in depths:
+    for depth in resolved_depths:
         forward_kwargs: dict[str, Any] = {
             "labels": device_batches[0],
             "return_logits": False,
@@ -234,25 +381,45 @@ def benchmark(
                 else (halt_mode if architecture == "irl3" else "irl2")
             ),
             "writeback_disabled": bool(disable_writeback),
+            "halt_threshold": resolved_halt_threshold,
             "cross_entropy_mean": statistics.fmean(cross_entropies),
             "cross_entropy_samples": cross_entropies,
             "elapsed_seconds_samples": elapsed_samples,
             "median_elapsed_seconds": median_elapsed,
-            "median_batch_latency_milliseconds": (
-                1000.0 * median_elapsed / batches
-            ),
+            "median_batch_latency_milliseconds": (1000.0 * median_elapsed / batches),
             "median_tokens_per_second": predicted_tokens / (repeats * median_elapsed),
             "peak_memory_gib": timed_peak_memory,
             "diagnostic_peak_memory_gib": diagnostic_peak_memory,
             "analytic_budget_forward_flops_per_token": analytic_budget_flops,
-            "analytic_diagnostic_forward_flops_per_token": (
-                analytic_diagnostic_flops
-            ),
+            "analytic_diagnostic_forward_flops_per_token": (analytic_diagnostic_flops),
             "diagnostics": diagnostics,
         }
         records.append(record)
+    state_comparisons: dict[int, dict[str, Any]] = {}
+    if state_reference_depth is not None:
+        state_comparisons = _irl3_state_comparisons(
+            model,
+            device_batches,
+            depths=resolved_depths,
+            reference_depth=state_reference_depth,
+            comparison_batches=state_comparison_batches,
+        )
+        reference_record = next(
+            (record for record in records if record["depth"] == state_reference_depth),
+            None,
+        )
+        if reference_record is None:
+            raise ValueError("state reference depth must be included in --depths")
+        reference_ce = reference_record["cross_entropy_samples"]
+        for record in records:
+            depth = int(record["depth"])
+            record["state_comparison_to_reference"] = state_comparisons[depth]
+            record["paired_cross_entropy_delta_to_reference"] = _paired_ce_summary(
+                record["cross_entropy_samples"],
+                reference_ce,
+            )
     return {
-        "schema_version": 2,
+        "schema_version": 3 if state_reference_depth is not None else 2,
         "architecture": architecture,
         "checkpoint": str(checkpoint.resolve()),
         "parameters": parameter_count,
@@ -263,7 +430,20 @@ def benchmark(
         "batches": batches,
         "repeats": repeats,
         "halt_mode": halt_mode if architecture == "irl3" else "irl2",
+        "halt_threshold": resolved_halt_threshold,
         "writeback_disabled": bool(disable_writeback),
+        "evaluated_predicted_tokens": (
+            repeats * batches * batch_size * (sequence_length - 1)
+        ),
+        "state_reference_depth": state_reference_depth,
+        "state_comparison_batches": (
+            state_comparison_batches if state_reference_depth is not None else 0
+        ),
+        "state_comparison_prefixes": (
+            state_comparison_batches * batch_size * sequence_length
+            if state_reference_depth is not None
+            else 0
+        ),
         "records": records,
     }
 
@@ -283,9 +463,25 @@ def main() -> None:
         "--halt-mode", choices=("fixed", "act", "adaptive"), default="fixed"
     )
     parser.add_argument(
+        "--halt-threshold",
+        type=float,
+        help="Evaluation-only IRL-3 adaptive cumulative-halt threshold override",
+    )
+    parser.add_argument(
         "--disable-writeback",
         action="store_true",
         help="Evaluation-only IRL-3 correction ablation on the same checkpoint",
+    )
+    parser.add_argument(
+        "--state-reference-depth",
+        type=int,
+        help="Compare fixed-budget Z/H/M/corrections against this depth",
+    )
+    parser.add_argument(
+        "--state-comparison-batches",
+        type=int,
+        default=1,
+        help="Number of paired batches used for full-state comparisons",
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -305,6 +501,9 @@ def main() -> None:
         precision=args.precision,
         halt_mode=args.halt_mode,
         disable_writeback=args.disable_writeback,
+        halt_threshold=args.halt_threshold,
+        state_reference_depth=args.state_reference_depth,
+        state_comparison_batches=args.state_comparison_batches,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
