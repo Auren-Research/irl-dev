@@ -240,12 +240,18 @@ def generate_stage_b(
     )
     config_path = stage_root / "config.yaml"
     _write_yaml(config_path, config)
+    data_manifest = repo_root / "data/irl3_recurrent_utility/manifest.json"
+    if not data_manifest.is_file():
+        raise FileNotFoundError(data_manifest)
     return {
         "policy_name": policy_name,
         "policy": asdict(policy) | {"training_halt_mode": policy.halt_mode},
         "config": str(config_path),
         "config_sha256": _sha256(config_path),
         "starting_checkpoint": str(starting_checkpoint),
+        "starting_checkpoint_identity": checkpoint_identity(starting_checkpoint),
+        "data_manifest": str(data_manifest.resolve()),
+        "data_manifest_sha256": _sha256(data_manifest),
         "milestones": {
             label: {"step": step, "tokens": step * TOKENS_PER_STEP}
             for label, step in STAGE_B_MILESTONES.items()
