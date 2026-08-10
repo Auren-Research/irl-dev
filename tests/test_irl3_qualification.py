@@ -20,7 +20,7 @@ from scripts.generate_irl3_recurrent_utility_configs import (
 )
 from scripts.prepare_irl3_recurrent_utility_data import _range, _validate_ranges
 from scripts.summarize_irl3_qualification import build_summary, markdown
-from scripts.summarize_irl3_recurrent_utility import _curve
+from scripts.summarize_irl3_recurrent_utility import _curve, _training_summary
 
 
 def _report(
@@ -257,3 +257,46 @@ def test_recurrent_utility_curve_classifies_significant_depths(tmp_path) -> None
     assert result["best_depth"] == 4
     assert result["detectable_gain_depths"] == [4]
     assert result["detectable_harm_depths"] == [8]
+
+
+def test_recurrent_utility_training_summary_segments_clip_statistics(
+    tmp_path,
+) -> None:
+    metrics = []
+    for step, gradient_norm, cross_entropy in (
+        (10, 0.5, 5.0),
+        (20, 1.5, 4.8),
+        (30, 2.5, 4.6),
+    ):
+        metrics.append(
+            {
+                "step": step,
+                "tokens_seen": 100 * step,
+                "tokens_per_second": 2000.0,
+                "cross_entropy": cross_entropy,
+                "loss": cross_entropy + 1.0,
+                "equilibrium_loss": 0.01 * step,
+                "gradient_norm": gradient_norm,
+                "memory_peak_gib": 10.0 + step,
+                "memory_reserved_gib": 20.0 + step,
+                "analytic_training_flops_per_token": 4e9,
+            }
+        )
+    (tmp_path / "metrics.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in metrics)
+    )
+
+    result = _training_summary(
+        tmp_path,
+        start_step_exclusive=10,
+        end_step_inclusive=30,
+        gradient_clip_threshold=1.0,
+    )
+
+    assert result["logged_points"] == 2
+    assert result["observed_start_step"] == 20
+    assert result["gradient_clip_fraction"] == pytest.approx(1.0)
+    assert result["gradient_norm_median"] == pytest.approx(2.0)
+    assert result["gradient_norm_p95"] == pytest.approx(2.5)
+    assert result["peak_allocated_gib"] == pytest.approx(40.0)
+    assert result["median_analytic_training_tflops"] == pytest.approx(8.0)
