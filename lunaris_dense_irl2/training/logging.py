@@ -23,6 +23,21 @@ def estimate_training_flops_per_token(
     d_model = model.d_model
     kv_width = model.kv_dim
     attention_projection = 2.0 * d_model * (2 * kv_width + 2 * d_model)
+    if model.architecture_name == "lunaris_dense_transformer":
+        ffn_projection = 6.0 * d_model * model.ffn_hidden_dim
+        attention_mixing = 0.0
+        for layer_index in range(model.n_layers):
+            visible = (
+                min(sequence_length, model.local_window)
+                if model.attention_type(layer_index) == "local"
+                else sequence_length
+            )
+            attention_mixing += 4.0 * visible * d_model
+        block_forward = model.n_layers * (
+            attention_projection + ffn_projection
+        ) + attention_mixing
+        output_forward = 2.0 * d_model * model.vocab_size
+        return 3.0 * (block_forward + output_forward)
     if model.architecture_name == "lunaris_dense_irl_core":
         ffn_projection = 6.0 * d_model * model.ffn_hidden_dim
         ordinary_forward = model.n_ordinary_layers * (

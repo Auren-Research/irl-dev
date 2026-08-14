@@ -1,0 +1,83 @@
+model_profile: "../profiles/benchmark_irl_core_135m.yaml"
+
+data:
+  train_dir: "data/architecture_benchmark/train"
+  validation_dir: "data/architecture_benchmark/dev"
+  sequence_length: 4096
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  mmap_cache_size: 4
+  shuffle: true
+  seed: 1337
+
+optimizer:
+  name: "adamw"
+  learning_rate: 0.0003
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-8
+  fused: "auto"
+
+schedule:
+  name: "wsd"
+  warmup_steps: 305
+  stable_steps: 13427
+  decay_steps: 1526
+  min_lr_ratio: 0.1
+  decay_shape: "cosine"
+
+parallel:
+  strategy: "none"
+  precision: "bf16"
+  reduce_dtype: "fp32"
+  compile: false
+  regional_compile: true
+  compile_mode: "max-autotune-no-cudagraphs"
+  deterministic: false
+
+training:
+  micro_batch_size: 8
+  gradient_accumulation_steps: 1
+  max_steps: 15258
+  seed: 20260814
+  gradient_clip: 1.0
+  gradient_clip_mode: "global"
+  loss_chunk_size: 1024
+  loss_backend: "chunked"
+  z_loss_coefficient: 1.0e-4
+  fail_on_nonfinite: true
+
+objectives:
+  irl_start_iters: 6
+  irl_ramp_steps: 0
+  irl_consistency_weight: 0.0
+  irl_consistency_warmup_steps: 0
+  irl_consistency_ramp_steps: 0
+  mtp_loss_weight: 0.0
+  mtp_warmup_steps: 0
+  mtp_ramp_steps: 0
+  mtp_horizon_interval: 0
+  mtp_horizon_decay: 0.7
+
+validation:
+  interval: 0
+  batches: 0
+  at_start: false
+
+checkpoint:
+  directory: "checkpoints/architecture_benchmark/irl_core"
+  interval: 0
+  keep_last: 6
+  async_save: false
+  resume: "auto"
+  save_final: true
+
+logging:
+  interval: 20
+  jsonl_path: "qualification_artifacts/irl_core_architecture_benchmark/training/irl_core.jsonl"
+  wandb_project: null
+  profile_steps: 0
+  peak_tflops_per_gpu: null

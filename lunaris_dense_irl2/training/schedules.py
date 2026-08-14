@@ -39,6 +39,13 @@ def auxiliary_schedule(
     """Resolve the coupled IRL-depth and MTP curriculum."""
 
     step = max(0, int(step))
+    if model.architecture_name == "lunaris_dense_transformer":
+        return AuxiliarySchedule(
+            irl_iters=1,
+            mtp_active_heads=0,
+            mtp_loss_weight=0.0,
+            irl_consistency_weight=0.0,
+        )
     if model.architecture_name == "lunaris_dense_irl_core":
         return AuxiliarySchedule(
             irl_iters=model.irl_train_iters,

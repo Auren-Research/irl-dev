@@ -268,6 +268,7 @@ def _print_startup(
     model: nn.Module,
     train_dataset: MemoryMappedTokenDataset,
     max_steps: int,
+    run_until_step: int,
 ) -> None:
     """Print one concise resolved-run summary."""
 
@@ -281,7 +282,7 @@ def _print_startup(
     )
     tokens_per_step = global_batch * int(config.data.sequence_length)
     print("=" * 88)
-    print("LUNARIS DENSE IRL-2 :: LARGE-SCALE PRETRAINING")
+    print("LUNARIS CONTROLLED PRETRAINING")
     print("=" * 88)
     print(
         f"accelerator={context.accelerator} world={context.world_size} "
@@ -293,7 +294,8 @@ def _print_startup(
     )
     print(
         f"dataset={train_dataset.total_tokens:,} tokens in "
-        f"{len(train_dataset.shards):,} shards max_steps={max_steps:,}"
+        f"{len(train_dataset.shards):,} shards max_steps={max_steps:,} "
+        f"run_until_step={run_until_step:,}"
     )
     print(
         f"optimizer={config.optimizer.name} schedule={config.schedule.name} "
@@ -307,6 +309,7 @@ def train(
     *,
     max_steps_override: Optional[int] = None,
     resume_override: Optional[str] = None,
+    stop_after_step: Optional[int] = None,
 ) -> None:
     """Run resumable single-node or multi-node pretraining."""
 
@@ -330,6 +333,11 @@ def train(
         )
     max_steps = _resolve_runtime_steps(config, context)
     _fit_schedule_to_steps(config, max_steps)
+    run_until_step = max_steps
+    if stop_after_step is not None:
+        if int(stop_after_step) <= 0:
+            raise ValueError("stop_after_step must be positive")
+        run_until_step = min(max_steps, int(stop_after_step))
 
     # Every rank must construct identical weights before DDP/FSDP2 setup.
     seed_everything(config.training.seed)
@@ -428,6 +436,7 @@ def train(
         model,
         train_dataset,
         max_steps,
+        run_until_step,
     )
 
     stop_requested = False
@@ -470,7 +479,7 @@ def train(
 
     try:
         with build_profiler(config, context) as profiler:
-            while state.step < max_steps and not stop_requested:
+            while state.step < run_until_step and not stop_requested:
                 multiplier = lr_multiplier(
                     state.step,
                     config.schedule,
@@ -602,7 +611,11 @@ def train(
                         latest_validation["validation_loss"],
                     )
 
-                should_log = state.step % config.logging.interval == 0
+                should_log = (
+                    state.step % config.logging.interval == 0
+                    or state.step >= run_until_step
+                    or stop_requested
+                )
                 if should_log:
                     averaged = torch.stack(
                         (
@@ -686,6 +699,8 @@ def train(
             logger.close(
                 {
                     "final_step": state.step,
+                    "configured_max_step": max_steps,
+                    "run_until_step": run_until_step,
                     "tokens_seen": state.tokens_seen,
                     "best_validation_loss": state.best_validation_loss,
                     "stopped_by_signal": stop_requested,
@@ -713,6 +728,15 @@ def main() -> None:
         help="Override checkpoint.resume with auto, none, or a path",
     )
     parser.add_argument(
+        "--stop-after-step",
+        type=int,
+        default=None,
+        help=(
+            "Stop and save at this step without changing the full-run "
+            "learning-rate schedule"
+        ),
+    )
+    parser.add_argument(
         "--validate-config",
         action="store_true",
         help="Validate and print the resolved config without allocating a model",
@@ -730,6 +754,7 @@ def main() -> None:
         args.config,
         max_steps_override=args.max_steps,
         resume_override=args.resume,
+        stop_after_step=args.stop_after_step,
     )
 
 

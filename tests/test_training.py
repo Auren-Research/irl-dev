@@ -389,13 +389,13 @@ def test_cpu_training_and_checkpoint_resume(tmp_path: Path) -> None:
             _debug_training_payload(
                 data_root,
                 checkpoint_root,
-                max_steps=1,
+                max_steps=2,
                 resume="none",
             )
         ),
         encoding="utf-8",
     )
-    train(config_path)
+    train(config_path, stop_after_step=1)
     assert (checkpoint_root / "step_00000001" / "_SUCCESS").exists()
 
     config_path.write_text(
@@ -409,7 +409,7 @@ def test_cpu_training_and_checkpoint_resume(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    train(config_path)
+    train(config_path, stop_after_step=2)
     assert (checkpoint_root / "step_00000002" / "_SUCCESS").exists()
 
     export_directory = tmp_path / "exported"

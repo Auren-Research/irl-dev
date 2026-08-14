@@ -294,7 +294,22 @@ class ObjectiveConfig:
                 "A training model with MTP heads requires a positive "
                 "objectives.mtp_loss_weight"
             )
-        if model.architecture_name == "lunaris_dense_irl_core":
+        if model.architecture_name == "lunaris_dense_transformer":
+            if self.irl_start_iters != 1 or self.irl_ramp_steps != 0:
+                raise ValueError(
+                    "The Transformer baseline requires fixed compatibility "
+                    "objectives.irl_start_iters=1 and irl_ramp_steps=0"
+                )
+            if self.irl_consistency_weight != 0.0:
+                raise ValueError(
+                    "The Transformer baseline requires "
+                    "objectives.irl_consistency_weight=0"
+                )
+            if self.mtp_loss_weight != 0.0:
+                raise ValueError(
+                    "The Transformer baseline requires objectives.mtp_loss_weight=0"
+                )
+        elif model.architecture_name == "lunaris_dense_irl_core":
             if self.irl_start_iters != model.irl_train_iters:
                 raise ValueError(
                     "IRL Core requires objectives.irl_start_iters to equal "
