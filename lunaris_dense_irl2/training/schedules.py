@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 
 import torch
 
-from ..config import LunarisDenseConfig
 from .config import ObjectiveConfig, ScheduleConfig
 
 
@@ -34,12 +33,19 @@ def _linear_ramp(step: int, start: int, duration: int) -> float:
 
 def auxiliary_schedule(
     step: int,
-    model: LunarisDenseConfig,
+    model: Any,
     config: ObjectiveConfig,
 ) -> AuxiliarySchedule:
     """Resolve the coupled IRL-depth and MTP curriculum."""
 
     step = max(0, int(step))
+    if model.architecture_name == "lunaris_dense_irl_core":
+        return AuxiliarySchedule(
+            irl_iters=model.irl_train_iters,
+            mtp_active_heads=0,
+            mtp_loss_weight=0.0,
+            irl_consistency_weight=0.0,
+        )
     depth_levels = model.irl_train_iters - config.irl_start_iters
     if depth_levels <= 0 or config.irl_ramp_steps <= 0:
         irl_iters = model.irl_train_iters

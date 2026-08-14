@@ -14,7 +14,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from ..model import LunarisDenseForCausalLM
 from .checkpointing import CheckpointManager, TrainingState
 from .config import TrainConfig
 from .data import (
@@ -38,6 +37,7 @@ from .logging import (
     memory_metrics,
     perplexity,
 )
+from .model_factory import build_model
 from .optimizers import (
     GradientClipper,
     OptimizerBundle,
@@ -350,7 +350,7 @@ def train(
                 mmap_cache_size=config.data.mmap_cache_size,
             )
 
-    architecture = LunarisDenseForCausalLM(config.model)
+    architecture = build_model(config.model)
     architecture.set_regional_compile(config.parallel.regional_compile)
     compile_model(architecture, config.parallel, context)
     model = parallelize_model(
@@ -454,6 +454,7 @@ def train(
     window_z = torch.zeros((), device=context.device)
     window_mtp = torch.zeros((), device=context.device)
     window_consistency = torch.zeros((), device=context.device)
+    window_clipped_steps = torch.zeros((), device=context.device)
     window_steps = 0
     latest_grad_norm = torch.zeros((), device=context.device)
     latest_validation: Dict[str, float] = {}
@@ -568,6 +569,8 @@ def train(
                     model,
                     error_if_nonfinite=config.training.fail_on_nonfinite,
                 )
+                if clipper.last_was_clipped is not None:
+                    window_clipped_steps.add_(clipper.last_was_clipped)
                 optimizer_step(optimizers, scaler)
                 optimizers.zero_grad(set_to_none=True)
                 state.step += 1
@@ -609,6 +612,7 @@ def train(
                             window_mtp / max(1, window_steps),
                             window_consistency / max(1, window_steps),
                             latest_grad_norm.float(),
+                            window_clipped_steps / max(1, window_steps),
                         )
                     )
                     averaged = context.reduce_mean(averaged)
@@ -624,6 +628,8 @@ def train(
                         "perplexity": perplexity(float(averaged[1].item())),
                         "learning_rate": current_lr,
                         "gradient_norm": float(averaged[5].item()),
+                        "pre_clip_gradient_norm": float(averaged[5].item()),
+                        "clipped_step_fraction": float(averaged[6].item()),
                         "irl_train_iters": auxiliary.irl_iters,
                         "mtp_active_heads": auxiliary.mtp_active_heads,
                         "mtp_loss_weight": auxiliary.mtp_loss_weight,
@@ -646,6 +652,7 @@ def train(
                     window_z.zero_()
                     window_mtp.zero_()
                     window_consistency.zero_()
+                    window_clipped_steps.zero_()
                     window_steps = 0
 
                 should_checkpoint = (

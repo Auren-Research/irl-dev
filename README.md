@@ -22,6 +22,12 @@ PyTorch tanto em NVIDIA/CUDA quanto em AMD/ROCm.
 Veja [`RELEASE_NOTES_v0.4.0.md`](RELEASE_NOTES_v0.4.0.md) para a matriz de
 decisões, compatibilidade e os próximos gates de GPU.
 
+O branch `irl-core` também contém uma arquitetura simplificada e independente
+em `lunaris_dense_irl_core/`. A formulação, o regime de treino e as limitações
+estão documentados em
+[`IRL_CORE_ARCHITECTURE.md`](IRL_CORE_ARCHITECTURE.md). A implementação IRL-2
+e seus perfis permanecem disponíveis sem alterações de arquitetura.
+
 ## Sumário
 
 - [Visão geral](#visão-geral)

@@ -8,8 +8,7 @@ from pathlib import Path
 
 import torch.distributed.checkpoint as dcp
 
-from ..config import LunarisDenseConfig
-from ..model import LunarisDenseForCausalLM
+from .model_factory import build_model, model_config_from_dict
 
 
 def export_checkpoint(
@@ -26,8 +25,8 @@ def export_checkpoint(
     metadata = json.loads(
         (checkpoint_path / "metadata.json").read_text(encoding="utf-8")
     )
-    model_config = LunarisDenseConfig.from_dict(metadata["train_config"]["model"])
-    model = LunarisDenseForCausalLM(model_config)
+    model_config = model_config_from_dict(metadata["train_config"]["model"])
+    model = build_model(model_config)
     state = {"model": model.state_dict()}
     dcp.load(
         state,

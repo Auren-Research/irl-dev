@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -278,7 +278,7 @@ def _gradient_group(name: str) -> str:
         return "attention"
     if "mtp_predictor" in name:
         return "mtp"
-    if ".irl." in name:
+    if ".irl." in name or "irl_core" in name:
         return "irl"
     if "embedding" in name or "lm_head" in name:
         return "embedding_and_head"
@@ -294,6 +294,7 @@ class GradientClipper:
         self.beta = float(config.adaptive_clip_beta)
         self.factor = float(config.adaptive_clip_factor)
         self.ema_norms: Dict[str, float] = {}
+        self.last_was_clipped: Optional[torch.Tensor] = None
 
     def clip(
         self,
@@ -307,16 +308,22 @@ class GradientClipper:
             parameter for parameter in model.parameters() if parameter.grad is not None
         ]
         if not parameters:
-            return torch.zeros((), device=next(model.parameters()).device)
+            zero = torch.zeros((), device=next(model.parameters()).device)
+            self.last_was_clipped = zero
+            return zero
 
         if self.mode in {"global", "none"}:
             limit = self.max_norm if self.mode == "global" else float("inf")
-            return torch.nn.utils.clip_grad_norm_(
+            total_norm = torch.nn.utils.clip_grad_norm_(
                 parameters,
                 max_norm=limit,
                 error_if_nonfinite=error_if_nonfinite,
                 foreach=None,
             )
+            self.last_was_clipped = (
+                total_norm.detach().float().gt(limit).to(dtype=torch.float32)
+            )
+            return total_norm
 
         groups: Dict[str, List[nn.Parameter]] = defaultdict(list)
         for name, parameter in model.named_parameters():
@@ -328,6 +335,7 @@ class GradientClipper:
             device=parameters[0].grad.device,
             dtype=torch.float32,
         )
+        clipped = torch.zeros_like(squared_total)
         for name, group_parameters in groups.items():
             group_norm = torch.nn.utils.clip_grad_norm_(
                 group_parameters,
@@ -342,9 +350,11 @@ class GradientClipper:
             )
             threshold = max(self.max_norm, self.factor * previous)
             if norm_value > threshold:
+                clipped.fill_(1.0)
                 scale = threshold / max(norm_value, 1e-12)
                 for parameter in group_parameters:
                     parameter.grad.mul_(scale)
             self.ema_norms[name] = self.beta * previous + (1.0 - self.beta) * norm_value
             squared_total.add_(group_norm.detach().float().square())
+        self.last_was_clipped = clipped
         return squared_total.sqrt()
