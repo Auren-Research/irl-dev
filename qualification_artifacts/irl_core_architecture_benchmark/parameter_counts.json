@@ -1,0 +1,44 @@
+{
+  "irl2": {
+    "architecture_name": "lunaris_dense_irl2",
+    "effective_attention_calls_per_forward": 16,
+    "embedding_parameters": 50331648,
+    "estimated_training_flops_per_token": 1396703232.0,
+    "model": "irl2",
+    "ordinary_transformer_block_parameters": 25192448,
+    "other_parameters": 768,
+    "recurrent_depth": 2,
+    "recurrent_modules": 16,
+    "recurrent_specific_parameters": 56672272,
+    "total_parameters": 132197136,
+    "trainable_parameters": 132197136
+  },
+  "irl_core": {
+    "architecture_name": "lunaris_dense_irl_core",
+    "effective_attention_calls_per_forward": 21,
+    "embedding_parameters": 50331648,
+    "estimated_training_flops_per_token": 1387266048.0,
+    "model": "irl_core",
+    "ordinary_transformer_block_parameters": 76702080,
+    "other_parameters": 768,
+    "recurrent_depth": 6,
+    "recurrent_modules": 1,
+    "recurrent_specific_parameters": 5115008,
+    "total_parameters": 132149504,
+    "trainable_parameters": 132149504
+  },
+  "transformer": {
+    "architecture_name": "lunaris_dense_transformer",
+    "effective_attention_calls_per_forward": 16,
+    "embedding_parameters": 50331648,
+    "estimated_training_flops_per_token": 1056964608.0,
+    "model": "transformer",
+    "ordinary_transformer_block_parameters": 81815552,
+    "other_parameters": 768,
+    "recurrent_depth": 0,
+    "recurrent_modules": 0,
+    "recurrent_specific_parameters": 0,
+    "total_parameters": 132147968,
+    "trainable_parameters": 132147968
+  }
+}

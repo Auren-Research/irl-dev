@@ -1,0 +1,70 @@
+{
+  "all_losses_finite": true,
+  "allocation_seconds": 1.6330213530000037,
+  "architecture_name": "lunaris_dense_irl2",
+  "compilation_and_cold_start_seconds_estimate": 6.104805255999963,
+  "config_path": "/shared-docker/irl-core-benchmark/training_profiles/benchmark_irl2_135m_1x_mi300x.yaml",
+  "config_sha256": "1086c9064d1ab8d813569edfbee20c2852733331acc3ee458b034557576a99fe",
+  "median_steady_backward_seconds": 0.24375396100003854,
+  "median_steady_forward_seconds": 0.09936279299927264,
+  "median_steady_optimizer_seconds": 0.0035396319999563275,
+  "median_steady_step_seconds": 0.3463263009998627,
+  "memory_allocated_gib": 2.2729525566101074,
+  "memory_peak_gib": 53.089417457580566,
+  "memory_reserved_gib": 53.65234375,
+  "projected_trajectory_hours": 1.4678463057377515,
+  "recurrent_gradient_norms": [
+    0.3464223873925743,
+    0.3372606245492647,
+    0.20972574253403561,
+    0.08037509684878733
+  ],
+  "schema_version": 1,
+  "source_commit": "9a04c391d8d7595b57b13ab04fb2821ba0466554",
+  "steady_tokens_per_second": 94615.9731599853,
+  "steps": [
+    {
+      "backward_seconds": 2.469877641999119,
+      "forward_seconds": 3.8334650790002343,
+      "loss": 11.25654411315918,
+      "optimizer_seconds": 0.147786678000557,
+      "pre_clip_gradient_norm": 18.09601593017578,
+      "step": 1,
+      "total_seconds": 6.451131556999826
+    },
+    {
+      "backward_seconds": 0.24414123600035964,
+      "forward_seconds": 0.09975471800044033,
+      "loss": 11.020955085754395,
+      "optimizer_seconds": 0.003728343999682693,
+      "pre_clip_gradient_norm": 70.30284118652344,
+      "step": 2,
+      "total_seconds": 0.3476257149995945
+    },
+    {
+      "backward_seconds": 0.24342264799997793,
+      "forward_seconds": 0.09936279299927264,
+      "loss": 10.114276885986328,
+      "optimizer_seconds": 0.0035396319999563275,
+      "pre_clip_gradient_norm": 2.972201108932495,
+      "step": 3,
+      "total_seconds": 0.3463263009998627
+    },
+    {
+      "backward_seconds": 0.24375396100003854,
+      "forward_seconds": 0.09876013099983538,
+      "loss": 9.68792724609375,
+      "optimizer_seconds": 0.0032428249996883096,
+      "pre_clip_gradient_norm": 2.3133788108825684,
+      "step": 4,
+      "total_seconds": 0.3457593419998375
+    }
+  ],
+  "tokens_per_step": 32768,
+  "torch": {
+    "bf16_supported": true,
+    "device_name": "AMD Instinct MI300X VF",
+    "hip": "7.14.60850",
+    "version": "2.12.0+rocm7.14.0a20260608"
+  }
+}

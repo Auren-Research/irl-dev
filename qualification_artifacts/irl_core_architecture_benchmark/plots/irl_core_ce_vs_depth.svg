@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540">
+<rect width="100%" height="100%" fill="white"/>
+<text x="450.0" y="28" text-anchor="middle" font-family="sans-serif" font-size="20">IRL Core dev CE vs recurrent depth</text>
+<line x1="90.00" y1="55" x2="90.00" y2="465" stroke="#e5e7eb"/>
+<text x="90.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">1</text>
+<line x1="90" y1="465.00" x2="870" y2="465.00" stroke="#e5e7eb"/>
+<text x="80" y="469.00" text-anchor="end" font-family="sans-serif" font-size="12">3.5218</text>
+<line x1="246.00" y1="55" x2="246.00" y2="465" stroke="#e5e7eb"/>
+<text x="246.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">3</text>
+<line x1="90" y1="383.00" x2="870" y2="383.00" stroke="#e5e7eb"/>
+<text x="80" y="387.00" text-anchor="end" font-family="sans-serif" font-size="12">3.6953</text>
+<line x1="402.00" y1="55" x2="402.00" y2="465" stroke="#e5e7eb"/>
+<text x="402.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">5</text>
+<line x1="90" y1="301.00" x2="870" y2="301.00" stroke="#e5e7eb"/>
+<text x="80" y="305.00" text-anchor="end" font-family="sans-serif" font-size="12">3.8687</text>
+<line x1="558.00" y1="55" x2="558.00" y2="465" stroke="#e5e7eb"/>
+<text x="558.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">8</text>
+<line x1="90" y1="219.00" x2="870" y2="219.00" stroke="#e5e7eb"/>
+<text x="80" y="223.00" text-anchor="end" font-family="sans-serif" font-size="12">4.0421</text>
+<line x1="714.00" y1="55" x2="714.00" y2="465" stroke="#e5e7eb"/>
+<text x="714.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">10</text>
+<line x1="90" y1="137.00" x2="870" y2="137.00" stroke="#e5e7eb"/>
+<text x="80" y="141.00" text-anchor="end" font-family="sans-serif" font-size="12">4.2155</text>
+<line x1="870.00" y1="55" x2="870.00" y2="465" stroke="#e5e7eb"/>
+<text x="870.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">12</text>
+<line x1="90" y1="55.00" x2="870" y2="55.00" stroke="#e5e7eb"/>
+<text x="80" y="59.00" text-anchor="end" font-family="sans-serif" font-size="12">4.3889</text>
+<polyline points="90.00,94.68 870.00,105.00 160.91,101.76 302.73,104.69 444.55,105.00 586.36,104.98" fill="none" stroke="#94a3b8" stroke-width="3"/>
+<circle cx="90.00" cy="94.68" r="4" fill="#94a3b8"/>
+<circle cx="870.00" cy="105.00" r="4" fill="#94a3b8"/>
+<circle cx="160.91" cy="101.76" r="4" fill="#94a3b8"/>
+<circle cx="302.73" cy="104.69" r="4" fill="#94a3b8"/>
+<circle cx="444.55" cy="105.00" r="4" fill="#94a3b8"/>
+<circle cx="586.36" cy="104.98" r="4" fill="#94a3b8"/>
+<line class="legend-swatch" x1="725" y1="55" x2="750" y2="55" stroke="#94a3b8" stroke-width="3"/>
+<text x="758" y="59" font-family="sans-serif" font-size="12">100M tokens</text>
+<polyline points="90.00,268.88 870.00,283.36 160.91,278.64 302.73,282.73 444.55,283.39 586.36,283.30" fill="none" stroke="#0ea5e9" stroke-width="3"/>
+<circle cx="90.00" cy="268.88" r="4" fill="#0ea5e9"/>
+<circle cx="870.00" cy="283.36" r="4" fill="#0ea5e9"/>
+<circle cx="160.91" cy="278.64" r="4" fill="#0ea5e9"/>
+<circle cx="302.73" cy="282.73" r="4" fill="#0ea5e9"/>
+<circle cx="444.55" cy="283.39" r="4" fill="#0ea5e9"/>
+<circle cx="586.36" cy="283.30" r="4" fill="#0ea5e9"/>
+<line class="legend-swatch" x1="725" y1="75" x2="750" y2="75" stroke="#0ea5e9" stroke-width="3"/>
+<text x="758" y="79" font-family="sans-serif" font-size="12">250M tokens</text>
+<polyline points="90.00,401.92 870.00,425.05 160.91,415.71 302.73,422.93 444.55,425.32 586.36,424.77" fill="none" stroke="#10b981" stroke-width="3"/>
+<circle cx="90.00" cy="401.92" r="4" fill="#10b981"/>
+<circle cx="870.00" cy="425.05" r="4" fill="#10b981"/>
+<circle cx="160.91" cy="415.71" r="4" fill="#10b981"/>
+<circle cx="302.73" cy="422.93" r="4" fill="#10b981"/>
+<circle cx="444.55" cy="425.32" r="4" fill="#10b981"/>
+<circle cx="586.36" cy="424.77" r="4" fill="#10b981"/>
+<line class="legend-swatch" x1="725" y1="95" x2="750" y2="95" stroke="#10b981" stroke-width="3"/>
+<text x="758" y="99" font-family="sans-serif" font-size="12">500M tokens</text>
+<line x1="90" y1="465" x2="870" y2="465" stroke="#111827"/>
+<line x1="90" y1="55" x2="90" y2="465" stroke="#111827"/>
+<text x="480.0" y="520" text-anchor="middle" font-family="sans-serif" font-size="14">Recurrent depth T</text>
+<text x="20" y="260.0" text-anchor="middle" transform="rotate(-90 20 260.0)" font-family="sans-serif" font-size="14">Cross-entropy</text>
+</svg>

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540">
+<rect width="100%" height="100%" fill="white"/>
+<text x="450.0" y="28" text-anchor="middle" font-family="sans-serif" font-size="20">Confirmation CE vs training tokens</text>
+<line x1="90.00" y1="55" x2="90.00" y2="465" stroke="#e5e7eb"/>
+<text x="90.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">100.008</text>
+<line x1="90" y1="465.00" x2="870" y2="465.00" stroke="#e5e7eb"/>
+<text x="80" y="469.00" text-anchor="end" font-family="sans-serif" font-size="12">3.5110</text>
+<line x1="246.00" y1="55" x2="246.00" y2="465" stroke="#e5e7eb"/>
+<text x="246.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">180.001</text>
+<line x1="90" y1="383.00" x2="870" y2="383.00" stroke="#e5e7eb"/>
+<text x="80" y="387.00" text-anchor="end" font-family="sans-serif" font-size="12">3.6830</text>
+<line x1="402.00" y1="55" x2="402.00" y2="465" stroke="#e5e7eb"/>
+<text x="402.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">259.994</text>
+<line x1="90" y1="301.00" x2="870" y2="301.00" stroke="#e5e7eb"/>
+<text x="80" y="305.00" text-anchor="end" font-family="sans-serif" font-size="12">3.8549</text>
+<line x1="558.00" y1="55" x2="558.00" y2="465" stroke="#e5e7eb"/>
+<text x="558.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">339.988</text>
+<line x1="90" y1="219.00" x2="870" y2="219.00" stroke="#e5e7eb"/>
+<text x="80" y="223.00" text-anchor="end" font-family="sans-serif" font-size="12">4.0268</text>
+<line x1="714.00" y1="55" x2="714.00" y2="465" stroke="#e5e7eb"/>
+<text x="714.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">419.981</text>
+<line x1="90" y1="137.00" x2="870" y2="137.00" stroke="#e5e7eb"/>
+<text x="80" y="141.00" text-anchor="end" font-family="sans-serif" font-size="12">4.1988</text>
+<line x1="870.00" y1="55" x2="870.00" y2="465" stroke="#e5e7eb"/>
+<text x="870.00" y="488" text-anchor="middle" font-family="sans-serif" font-size="12">499.974</text>
+<line x1="90" y1="55.00" x2="870" y2="55.00" stroke="#e5e7eb"/>
+<text x="80" y="59.00" text-anchor="end" font-family="sans-serif" font-size="12">4.3707</text>
+<polyline points="90.00,94.68 382.48,272.98 870.00,417.14" fill="none" stroke="#3b82f6" stroke-width="3"/>
+<circle cx="90.00" cy="94.68" r="4" fill="#3b82f6"/>
+<circle cx="382.48" cy="272.98" r="4" fill="#3b82f6"/>
+<circle cx="870.00" cy="417.14" r="4" fill="#3b82f6"/>
+<line class="legend-swatch" x1="725" y1="55" x2="750" y2="55" stroke="#3b82f6" stroke-width="3"/>
+<text x="758" y="59" font-family="sans-serif" font-size="12">Transformer</text>
+<polyline points="90.00,100.97 382.48,279.02 870.00,425.32" fill="none" stroke="#f59e0b" stroke-width="3"/>
+<circle cx="90.00" cy="100.97" r="4" fill="#f59e0b"/>
+<circle cx="382.48" cy="279.02" r="4" fill="#f59e0b"/>
+<circle cx="870.00" cy="425.32" r="4" fill="#f59e0b"/>
+<line class="legend-swatch" x1="725" y1="75" x2="750" y2="75" stroke="#f59e0b" stroke-width="3"/>
+<text x="758" y="79" font-family="sans-serif" font-size="12">IRL-2</text>
+<polyline points="90.00,95.82 382.48,276.29 870.00,421.87" fill="none" stroke="#10b981" stroke-width="3"/>
+<circle cx="90.00" cy="95.82" r="4" fill="#10b981"/>
+<circle cx="382.48" cy="276.29" r="4" fill="#10b981"/>
+<circle cx="870.00" cy="421.87" r="4" fill="#10b981"/>
+<line class="legend-swatch" x1="725" y1="95" x2="750" y2="95" stroke="#10b981" stroke-width="3"/>
+<text x="758" y="99" font-family="sans-serif" font-size="12">IRL Core</text>
+<line x1="90" y1="465" x2="870" y2="465" stroke="#111827"/>
+<line x1="90" y1="55" x2="90" y2="465" stroke="#111827"/>
+<text x="480.0" y="520" text-anchor="middle" font-family="sans-serif" font-size="14">Training tokens (millions)</text>
+<text x="20" y="260.0" text-anchor="middle" transform="rotate(-90 20 260.0)" font-family="sans-serif" font-size="14">Cross-entropy</text>
+</svg>

@@ -1,0 +1,384 @@
+{
+  "compute_efficiency": {
+    "irl2": {
+      "delta_ce_at_reference_flop_budget": 0.1320849279998928,
+      "estimated_ce_at_reference_flop_budget": 3.743475827866712,
+      "estimated_flops_to_reach_reference_ce": 6.787972334039411e+17,
+      "estimated_wall_seconds_to_reach_reference_ce": 5219.9232456085065,
+      "flops_ratio_to_reach_reference_ce": 1.2844939784053042,
+      "interpolation_supported": true,
+      "reference_cross_entropy": 3.6113908998668194,
+      "reference_cumulative_estimated_training_flops": 5.2845497512309555e+17,
+      "reference_model": "transformer",
+      "reference_training_tokens": 499974144.0,
+      "tokens_at_reference_flop_budget": 378358811.6756757,
+      "wall_ratio_to_reach_reference_ce": 1.3500450888213698
+    },
+    "irl_core": {
+      "delta_ce_at_reference_flop_budget": 0.13543748687065804,
+      "estimated_ce_at_reference_flop_budget": 3.7468283867374774,
+      "estimated_flops_to_reach_reference_ce": 6.82327940364358e+17,
+      "estimated_wall_seconds_to_reach_reference_ce": 4820.134237974192,
+      "flops_ratio_to_reach_reference_ce": 1.2911751662578634,
+      "interpolation_supported": true,
+      "reference_cross_entropy": 3.6113908998668194,
+      "reference_cumulative_estimated_training_flops": 5.2845497512309555e+17,
+      "reference_model": "transformer",
+      "reference_training_tokens": 499974144.0,
+      "tokens_at_reference_flop_budget": 380932681.14285713,
+      "wall_ratio_to_reach_reference_ce": 1.2466464063262679
+    }
+  },
+  "final_pairwise": {
+    "Core-IRL2": {
+      "ci95_high": 0.00813989497232778,
+      "ci95_low": 0.006318001379486489,
+      "comparison": "Core-IRL2",
+      "delta_ce": 0.007228948175907135,
+      "left_model": "irl_core",
+      "paired_batches": 128,
+      "right_model": "irl2",
+      "significant_at_95pct": true,
+      "standard_error": 0.00046477731407621657,
+      "step": 15258,
+      "training_tokens": 499974144
+    },
+    "Core-Transformer": {
+      "ci95_high": -0.008900376473232328,
+      "ci95_low": -0.010937729413942278,
+      "comparison": "Core-Transformer",
+      "delta_ce": -0.009919052943587303,
+      "left_model": "irl_core",
+      "paired_batches": 128,
+      "right_model": "transformer",
+      "significant_at_95pct": true,
+      "standard_error": 0.0005197424434276168,
+      "step": 15258,
+      "training_tokens": 499974144
+    },
+    "IRL2-Transformer": {
+      "ci95_high": -0.0163451530157322,
+      "ci95_low": -0.017950849223256675,
+      "comparison": "IRL2-Transformer",
+      "delta_ce": -0.017148001119494438,
+      "left_model": "irl2",
+      "paired_batches": 128,
+      "right_model": "transformer",
+      "significant_at_95pct": true,
+      "standard_error": 0.00040962390640593383,
+      "step": 15258,
+      "training_tokens": 499974144
+    }
+  },
+  "final_step": 15258,
+  "final_training_tokens": 499974144,
+  "flops_per_token_ratio_core_to_transformer": 1.3125,
+  "hardware": {
+    "irl2": {
+      "compilation_cold_start_seconds_estimate": 6.104805255999963,
+      "end_to_end_tokens_per_second": 93104.74357699815,
+      "max_logged_allocated_hbm_gib": 1.775221824645996,
+      "max_logged_reserved_hbm_gib": 53.853515625,
+      "median_backward_seconds": 0.24375396100003854,
+      "median_forward_seconds": 0.09936279299927264,
+      "median_optimizer_seconds": 0.0035396319999563275,
+      "model": "irl2",
+      "peak_allocated_hbm_gib": 53.10126447677612,
+      "qualification_steady_tokens_per_second": 94615.9731599853,
+      "training_tokens_per_second_median": 93875.22713946816,
+      "training_wall_seconds": 5370.017947437002
+    },
+    "irl_core": {
+      "compilation_cold_start_seconds_estimate": 6.075476326000171,
+      "end_to_end_tokens_per_second": 102040.89629553503,
+      "max_logged_allocated_hbm_gib": 1.7742633819580078,
+      "max_logged_reserved_hbm_gib": 38.943359375,
+      "median_backward_seconds": 0.2297749829995155,
+      "median_forward_seconds": 0.0810766650001824,
+      "median_optimizer_seconds": 0.003125373999864678,
+      "model": "irl_core",
+      "peak_allocated_hbm_gib": 38.332905292510986,
+      "qualification_steady_tokens_per_second": 104347.7967347883,
+      "training_tokens_per_second_median": 102954.69351455334,
+      "training_wall_seconds": 4899.742771289997
+    },
+    "transformer": {
+      "compilation_cold_start_seconds_estimate": 6.261326478000228,
+      "end_to_end_tokens_per_second": 129309.87792066325,
+      "max_logged_allocated_hbm_gib": 1.774367332458496,
+      "max_logged_reserved_hbm_gib": 31.90234375,
+      "median_backward_seconds": 0.18003965800016886,
+      "median_forward_seconds": 0.06503464900015388,
+      "median_optimizer_seconds": 0.0030092520000835066,
+      "model": "transformer",
+      "peak_allocated_hbm_gib": 31.344214916229248,
+      "qualification_steady_tokens_per_second": 131903.24315860093,
+      "training_tokens_per_second_median": 130770.3038989734,
+      "training_wall_seconds": 3866.4806744829966
+    }
+  },
+  "irl_core_diagnostics": [
+    {
+      "adjacent_update_cosine": [
+        0.27010446786880493,
+        0.19979119300842285,
+        0.2653222978115082,
+        0.15169848501682281,
+        0.16528306901454926
+      ],
+      "all_finite": true,
+      "correction_anchor_ratio": [
+        0.35395607352256775,
+        0.42728713154792786,
+        0.4147152006626129,
+        0.39858096837997437,
+        0.40068456530570984,
+        0.40468037128448486
+      ],
+      "damping_max": 0.9036992788314819,
+      "damping_mean": 0.8876442909240723,
+      "damping_min": 0.871505618095398,
+      "iterations": 6,
+      "read_rms": [
+        0.37579789757728577,
+        0.42613518238067627,
+        0.3895690143108368,
+        0.3764498829841614,
+        0.3850330114364624,
+        0.3884393870830536
+      ],
+      "relative_update_norm": [
+        1.0,
+        0.38092276453971863,
+        0.18306437134742737,
+        0.09850281476974487,
+        0.051458921283483505,
+        0.029834147542715073
+      ],
+      "state_rms": [
+        0.6368669867515564,
+        0.7688102722167969,
+        0.7461898326873779,
+        0.7171598076820374,
+        0.7209447622299194,
+        0.7281343340873718
+      ],
+      "step": 3052,
+      "training_tokens": 100007936,
+      "update_rms": [
+        0.6368669867515564,
+        0.30492469668388367,
+        0.14931122958660126,
+        0.08060041815042496,
+        0.04539487883448601,
+        0.028444284573197365
+      ]
+    },
+    {
+      "adjacent_update_cosine": [
+        0.14553184807300568,
+        0.09425382316112518,
+        0.2058304250240326,
+        0.15965193510055542,
+        0.16629484295845032
+      ],
+      "all_finite": true,
+      "correction_anchor_ratio": [
+        0.4097585678100586,
+        0.4834272861480713,
+        0.4726598262786865,
+        0.4536764621734619,
+        0.4534359276294708,
+        0.45811837911605835
+      ],
+      "damping_max": 0.9011772871017456,
+      "damping_mean": 0.8689233660697937,
+      "damping_min": 0.810050904750824,
+      "iterations": 6,
+      "read_rms": [
+        0.5596539974212646,
+        0.6312331557273865,
+        0.5612139105796814,
+        0.54361492395401,
+        0.5564041137695312,
+        0.5639891028404236
+      ],
+      "relative_update_norm": [
+        1.0,
+        0.4236109256744385,
+        0.2110709547996521,
+        0.11945927143096924,
+        0.06457749009132385,
+        0.039505571126937866
+      ],
+      "state_rms": [
+        1.1599451303482056,
+        1.3684866428375244,
+        1.3380061388015747,
+        1.2842680215835571,
+        1.283587098121643,
+        1.2968422174453735
+      ],
+      "step": 7629,
+      "training_tokens": 249987072,
+      "update_rms": [
+        1.1599451303482056,
+        0.6056584715843201,
+        0.30747753381729126,
+        0.17491069436073303,
+        0.10087582468986511,
+        0.06818059831857681
+      ]
+    },
+    {
+      "adjacent_update_cosine": [
+        0.04034233093261719,
+        0.021678214892745018,
+        0.13618949055671692,
+        0.17019924521446228,
+        0.19272707402706146
+      ],
+      "all_finite": true,
+      "correction_anchor_ratio": [
+        0.4763238728046417,
+        0.5536690354347229,
+        0.553286075592041,
+        0.526604950428009,
+        0.5184885859489441,
+        0.5245067477226257
+      ],
+      "damping_max": 0.9056599140167236,
+      "damping_mean": 0.8507959246635437,
+      "damping_min": 0.7379522323608398,
+      "iterations": 6,
+      "read_rms": [
+        0.59895259141922,
+        0.7140641212463379,
+        0.5927108526229858,
+        0.5610098242759705,
+        0.5901079177856445,
+        0.6096901297569275
+      ],
+      "relative_update_norm": [
+        1.0,
+        0.4979372024536133,
+        0.2677382528781891,
+        0.16614870727062225,
+        0.10020071268081665,
+        0.06385093927383423
+      ],
+      "state_rms": [
+        1.4732744693756104,
+        1.7125037908554077,
+        1.7113193273544312,
+        1.6287943124771118,
+        1.603690266609192,
+        1.6223045587539673
+      ],
+      "step": 15258,
+      "training_tokens": 499974144,
+      "update_rms": [
+        1.4732744693756104,
+        0.8928894400596619,
+        0.49718406796455383,
+        0.30191972851753235,
+        0.1899087131023407,
+        0.13000722229480743
+      ]
+    }
+  ],
+  "outcomes": {
+    "core_recurrent_utility_emerged": true,
+    "core_vs_irl2": "right_better",
+    "core_vs_transformer": "left_better",
+    "irl2_vs_transformer": "left_better",
+    "scaling_decision": "promising_but_do_not_proceed_directly"
+  },
+  "parameter_counts": {
+    "irl2": {
+      "architecture_name": "lunaris_dense_irl2",
+      "effective_attention_calls_per_forward": 16,
+      "embedding_parameters": 50331648,
+      "estimated_training_flops_per_token": 1396703232.0,
+      "model": "irl2",
+      "ordinary_transformer_block_parameters": 25192448,
+      "other_parameters": 768,
+      "recurrent_depth": 2,
+      "recurrent_modules": 16,
+      "recurrent_specific_parameters": 56672272,
+      "total_parameters": 132197136,
+      "trainable_parameters": 132197136
+    },
+    "irl_core": {
+      "architecture_name": "lunaris_dense_irl_core",
+      "effective_attention_calls_per_forward": 21,
+      "embedding_parameters": 50331648,
+      "estimated_training_flops_per_token": 1387266048.0,
+      "model": "irl_core",
+      "ordinary_transformer_block_parameters": 76702080,
+      "other_parameters": 768,
+      "recurrent_depth": 6,
+      "recurrent_modules": 1,
+      "recurrent_specific_parameters": 5115008,
+      "total_parameters": 132149504,
+      "trainable_parameters": 132149504
+    },
+    "transformer": {
+      "architecture_name": "lunaris_dense_transformer",
+      "effective_attention_calls_per_forward": 16,
+      "embedding_parameters": 50331648,
+      "estimated_training_flops_per_token": 1056964608.0,
+      "model": "transformer",
+      "ordinary_transformer_block_parameters": 81815552,
+      "other_parameters": 768,
+      "recurrent_depth": 0,
+      "recurrent_modules": 0,
+      "recurrent_specific_parameters": 0,
+      "total_parameters": 132147968,
+      "trainable_parameters": 132147968
+    }
+  },
+  "parameter_ratio_core_to_transformer": 1.0000116233342309,
+  "recurrent_utility": [
+    {
+      "ce6_minus_ce1": -0.02182547189295292,
+      "ce6_minus_ce2": -0.006838276982307434,
+      "step": 3052,
+      "training_tokens": 100007936
+    },
+    {
+      "ce6_minus_ce1": -0.030682237818837166,
+      "ce6_minus_ce2": -0.010048095136880875,
+      "step": 7629,
+      "training_tokens": 249987072
+    },
+    {
+      "ce6_minus_ce1": -0.04949411004781723,
+      "ce6_minus_ce2": -0.020324360579252243,
+      "step": 15258,
+      "training_tokens": 499974144
+    }
+  ],
+  "schema_version": 1,
+  "source_commit": "9a04c391d8d7595b57b13ab04fb2821ba0466554",
+  "token_efficiency": {
+    "irl2": {
+      "estimated_tokens": 485999615.27399194,
+      "interpolation_supported": true,
+      "target_ce": 3.6113908998668194,
+      "token_saving_fraction": 0.027950502828418378
+    },
+    "irl_core": {
+      "estimated_tokens": 491850817.90768224,
+      "interpolation_supported": true,
+      "target_ce": 3.6113908998668194,
+      "token_saving_fraction": 0.01624749237496126
+    }
+  },
+  "trajectory_mean_holdout_ce": {
+    "irl2": 3.875131408969243,
+    "irl_core": 3.882275443007111,
+    "transformer": 3.8892970449303683
+  },
+  "wall_clock_ratio_core_to_transformer": 1.2672358104945558
+}
