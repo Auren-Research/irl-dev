@@ -87,6 +87,7 @@ def recurrent_diagnostics(
     *,
     depths: List[int],
     device: torch.device,
+    loss_chunk_size: int,
 ) -> Dict[str, Any]:
     """Collect one small post-training depth and state-health diagnostic."""
 
@@ -100,6 +101,9 @@ def recurrent_diagnostics(
                 labels=tokens,
                 n_iters=depth,
                 return_irl_stats=depth == model.config.irl_eval_iters,
+                return_logits=False,
+                loss_chunk_size=loss_chunk_size,
+                loss_backend="chunked",
             )
         if output.loss is None:
             raise RuntimeError("Diagnostic evaluation did not return a loss")
@@ -229,6 +233,7 @@ def main() -> None:
         for _ in range(args.steps)
     ]
     step_seconds = [item["step_seconds"] for item in measured]
+    gradient_norms = [item["pre_clip_gradient_norm"] for item in measured]
     median_step = statistics.median(step_seconds)
     tokens_per_step = args.batch_size * args.sequence_length
     flops_per_token = estimate_training_flops_per_token(
@@ -254,9 +259,9 @@ def main() -> None:
         "measured_steps": args.steps,
         "losses": [item["loss"] for item in measured],
         "loss_decreased": measured[-1]["loss"] < measured[0]["loss"],
-        "pre_clip_gradient_norms": [
-            item["pre_clip_gradient_norm"] for item in measured
-        ],
+        "pre_clip_gradient_norms": gradient_norms,
+        "clipped_step_fraction": sum(value > 1.0 for value in gradient_norms)
+        / len(gradient_norms),
         "core_query_gradient_rms": [
             item["core_query_gradient_rms"] for item in measured
         ],
@@ -292,6 +297,7 @@ def main() -> None:
             tokens,
             depths=depths,
             device=device,
+            loss_chunk_size=args.loss_chunk_size,
         )
     if args.checkpoint_path:
         result["checkpoint_resume"] = checkpoint_resume_smoke(

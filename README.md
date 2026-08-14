@@ -26,7 +26,9 @@ O branch `irl-core` também contém uma arquitetura simplificada e independente
 em `lunaris_dense_irl_core/`. A formulação, o regime de treino e as limitações
 estão documentados em
 [`IRL_CORE_ARCHITECTURE.md`](IRL_CORE_ARCHITECTURE.md). A implementação IRL-2
-e seus perfis permanecem disponíveis sem alterações de arquitetura.
+e seus perfis permanecem disponíveis sem alterações de arquitetura. A
+qualificação BF16 na MI300X está em
+[`IRL_CORE_MI300X_REPORT.md`](IRL_CORE_MI300X_REPORT.md).
 
 ## Sumário
 
