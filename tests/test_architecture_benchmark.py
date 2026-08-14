@@ -18,6 +18,7 @@ from lunaris_dense_transformer import (
     LunarisTransformerConfig,
     LunarisTransformerForCausalLM,
 )
+from scripts.summarize_architecture_benchmark import _interpolate_ce
 
 
 def tiny_config(**overrides: object) -> LunarisTransformerConfig:
@@ -180,3 +181,10 @@ def test_transformer_bf16_forward_backward() -> None:
             pytest.skip(f"This CPU build lacks BF16 support: {exc}")
         raise
     assert model.blocks[0].attention.q_proj.weight.grad is not None
+
+
+def test_compute_efficiency_interpolation_stays_in_observed_range() -> None:
+    trajectory = [(100.0, 4.2), (250.0, 3.9), (500.0, 3.6)]
+    assert _interpolate_ce(trajectory, 375.0) == pytest.approx(3.75)
+    assert _interpolate_ce(trajectory, 50.0) is None
+    assert _interpolate_ce(trajectory, 550.0) is None

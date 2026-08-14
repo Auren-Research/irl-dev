@@ -104,6 +104,28 @@ def _interpolate_tokens(
     return None
 
 
+def _interpolate_ce(
+    trajectory: Sequence[tuple[float, float]],
+    target_tokens: float,
+) -> float | None:
+    """Linearly interpolate CE only inside the observed token interval."""
+
+    points = sorted(trajectory)
+    for (left_tokens, left_ce), (right_tokens, right_ce) in zip(
+        points, points[1:]
+    ):
+        if left_tokens <= target_tokens <= right_tokens:
+            if right_tokens == left_tokens:
+                return left_ce
+            fraction = (target_tokens - left_tokens) / (
+                right_tokens - left_tokens
+            )
+            return left_ce + fraction * (right_ce - left_ce)
+    if points and target_tokens == points[-1][0]:
+        return points[-1][1]
+    return None
+
+
 def _trajectory_area(points: Sequence[tuple[float, float]]) -> float:
     """Return mean CE over the measured token interval by trapezoid rule."""
 
@@ -469,6 +491,7 @@ def summarize(root: Path) -> dict[str, Any]:
         for row in depth_rows
     }
     recurrent_utility = []
+    core_diagnostics = []
     for milestone in preflight["milestones"]:
         step = int(milestone["step"])
         recurrent_utility.append(
@@ -479,11 +502,69 @@ def summarize(root: Path) -> dict[str, Any]:
                 "ce6_minus_ce2": depth_lookup[("irl_core", step, 6)] - depth_lookup[("irl_core", step, 2)],
             }
         )
+        core_diagnostics.append(
+            {
+                "step": step,
+                "training_tokens": milestone["tokens"],
+                **evaluations[("irl_core", step)]["irl_core_diagnostics"],
+            }
+        )
 
     parameter_ratio = report_by_model["irl_core"]["total_parameters"] / report_by_model["transformer"]["total_parameters"]
     flop_ratio = report_by_model["irl_core"]["estimated_training_flops_per_token"] / report_by_model["transformer"]["estimated_training_flops_per_token"]
     final_hardware = {row["model"]: row for row in hardware_rows}
     wall_ratio = final_hardware["irl_core"]["training_wall_seconds"] / final_hardware["transformer"]["training_wall_seconds"]
+    transformer_final_tokens = trajectories["transformer"][-1][0]
+    transformer_final_flops = (
+        transformer_final_tokens
+        * report_by_model["transformer"]["estimated_training_flops_per_token"]
+    )
+    compute_efficiency: dict[str, Any] = {}
+    for model in ("irl2", "irl_core"):
+        flops_per_token = report_by_model[model][
+            "estimated_training_flops_per_token"
+        ]
+        equal_flop_tokens = transformer_final_flops / flops_per_token
+        equal_flop_ce = _interpolate_ce(
+            trajectories[model], equal_flop_tokens
+        )
+        target_tokens = token_efficiency[model]["estimated_tokens"]
+        flops_to_target = (
+            None if target_tokens is None else target_tokens * flops_per_token
+        )
+        wall_seconds_to_target = (
+            None
+            if target_tokens is None
+            else target_tokens
+            / final_hardware[model]["end_to_end_tokens_per_second"]
+        )
+        compute_efficiency[model] = {
+            "reference_model": "transformer",
+            "reference_training_tokens": transformer_final_tokens,
+            "reference_cross_entropy": transformer_target,
+            "reference_cumulative_estimated_training_flops": transformer_final_flops,
+            "tokens_at_reference_flop_budget": equal_flop_tokens,
+            "estimated_ce_at_reference_flop_budget": equal_flop_ce,
+            "delta_ce_at_reference_flop_budget": (
+                None if equal_flop_ce is None else equal_flop_ce - transformer_target
+            ),
+            "estimated_flops_to_reach_reference_ce": flops_to_target,
+            "flops_ratio_to_reach_reference_ce": (
+                None
+                if flops_to_target is None
+                else flops_to_target / transformer_final_flops
+            ),
+            "estimated_wall_seconds_to_reach_reference_ce": wall_seconds_to_target,
+            "wall_ratio_to_reach_reference_ce": (
+                None
+                if wall_seconds_to_target is None
+                else wall_seconds_to_target
+                / final_hardware["transformer"]["training_wall_seconds"]
+            ),
+            "interpolation_supported": (
+                equal_flop_ce is not None and target_tokens is not None
+            ),
+        }
     core_transformer = final_pairs["Core-Transformer"]
     core_irl2 = final_pairs["Core-IRL2"]
     irl2_transformer = final_pairs["IRL2-Transformer"]
@@ -505,8 +586,8 @@ def summarize(root: Path) -> dict[str, Any]:
     )
     if core_outcome == "left_better" and core_irl2_outcome == "left_better" and utility_emerged:
         scaling_decision = "supports_500m_candidate"
-    elif core_outcome == "left_better":
-        scaling_decision = "qualified_support_with_compute_caveat"
+    elif core_outcome == "left_better" and utility_emerged:
+        scaling_decision = "promising_but_do_not_proceed_directly"
     else:
         scaling_decision = "do_not_proceed_directly"
 
@@ -527,10 +608,12 @@ def summarize(root: Path) -> dict[str, Any]:
             "scaling_decision": scaling_decision,
         },
         "token_efficiency": token_efficiency,
+        "compute_efficiency": compute_efficiency,
         "trajectory_mean_holdout_ce": {
             model: _trajectory_area(points) for model, points in trajectories.items()
         },
         "recurrent_utility": recurrent_utility,
+        "irl_core_diagnostics": core_diagnostics,
         "parameter_counts": report_by_model,
         "hardware": final_hardware,
     }
@@ -687,7 +770,23 @@ The CE values above are from the frozen confirmation holdout. This benchmark is 
 - IRL Core vs IRL-2: `{core_irl2_outcome}`.
 - Core recurrent-time utility emerged by the declared criterion: `{utility_emerged}`.
 - Core requires `{flop_ratio:.3f}x` estimated training FLOPs/token and `{wall_ratio:.3f}x` measured training wall time relative to the Transformer.
+- Core's interpolated token saving to the Transformer-final CE is `{token_efficiency['irl_core']['token_saving_fraction']:.3%}`, but it requires `{compute_efficiency['irl_core']['flops_ratio_to_reach_reference_ce']:.3f}x` estimated training FLOPs and `{compute_efficiency['irl_core']['wall_ratio_to_reach_reference_ce']:.3f}x` estimated wall time to reach that CE.
+- At the Transformer's final cumulative estimated-FLOP budget, Core is interpolated at CE `{compute_efficiency['irl_core']['estimated_ce_at_reference_flop_budget']:.6f}` (`{compute_efficiency['irl_core']['delta_ce_at_reference_flop_budget']:+.6f}` versus the Transformer final CE).
 - Scaling decision: `{scaling_decision}`.
+
+## Explicit benchmark questions
+
+1. **Does IRL Core outperform the Transformer at equal parameters and tokens?** Yes. At the final checkpoint Core is lower by `{core_transformer['delta_ce']:.6f}` CE with paired 95% CI `[{core_transformer['ci95_low']:.6f}, {core_transformer['ci95_high']:.6f}]`.
+2. **Does IRL-2 outperform the Transformer?** Yes. IRL-2 is lower by `{irl2_transformer['delta_ce']:.6f}` CE with paired 95% CI `[{irl2_transformer['ci95_low']:.6f}, {irl2_transformer['ci95_high']:.6f}]`.
+3. **Does IRL Core outperform IRL-2?** No. Core is higher by `{core_irl2['delta_ce']:.6f}` CE with paired 95% CI `[{core_irl2['ci95_low']:.6f}, {core_irl2['ci95_high']:.6f}]`.
+4. **Does Core recurrent-time utility emerge?** Yes. Dev `CE6-CE1` changes from `{recurrent_utility[0]['ce6_minus_ce1']:.6f}` at 100M to `{recurrent_utility[1]['ce6_minus_ce1']:.6f}` at 250M and `{recurrent_utility[2]['ce6_minus_ce1']:.6f}` at 500M. `CE6-CE2` changes from `{recurrent_utility[0]['ce6_minus_ce2']:.6f}` to `{recurrent_utility[1]['ce6_minus_ce2']:.6f}` and `{recurrent_utility[2]['ce6_minus_ce2']:.6f}`.
+5. **What does the Core quality win cost?** At the same 499,974,144 training tokens, Core uses `{flop_ratio:.3f}x` estimated FLOPs/token, `{wall_ratio:.3f}x` training wall time, and runs at `{final_hardware['irl_core']['training_tokens_per_second_median'] / final_hardware['transformer']['training_tokens_per_second_median']:.3f}x` Transformer throughput. Peak allocated HBM is `{final_hardware['irl_core']['peak_allocated_hbm_gib']:.2f}` GiB versus `{final_hardware['transformer']['peak_allocated_hbm_gib']:.2f}` GiB.
+6. **Where is the advantage strongest?** Parameter and token efficiency. Core saves an interpolated `{token_efficiency['irl_core']['token_saving_fraction']:.3%}` of tokens to the Transformer-final CE, but needs `{compute_efficiency['irl_core']['flops_ratio_to_reach_reference_ce']:.3f}x` estimated FLOPs and `{compute_efficiency['irl_core']['wall_ratio_to_reach_reference_ce']:.3f}x` estimated wall time to reach it. IRL-2 saves `{token_efficiency['irl2']['token_saving_fraction']:.3%}` of tokens but needs `{compute_efficiency['irl2']['flops_ratio_to_reach_reference_ce']:.3f}x` estimated FLOPs and `{compute_efficiency['irl2']['wall_ratio_to_reach_reference_ce']:.3f}x` estimated wall time.
+7. **Does this justify immediate substantial compute on the 501.8M Core candidate?** Not by itself. Core establishes a statistically resolved Transformer win and genuine within-checkpoint recurrent utility, but IRL-2 is significantly better and Core is worse on estimated-FLOP and wall-clock efficiency. The evidence is promising, but it does not clear an unconditional direct-to-scale gate for this specific Core candidate.
+
+## Optimization and mechanism health
+
+Final cumulative clipped-step fractions are `{clipping_rows[2]['cumulative_clipped_step_fraction']:.3%}` (Transformer), `{clipping_rows[5]['cumulative_clipped_step_fraction']:.3%}` (IRL-2), and `{clipping_rows[8]['cumulative_clipped_step_fraction']:.3%}` (Core); mature training was not permanently clipped. Core diagnostics are finite at every milestone. At 500M, damping min/mean/max is `{core_diagnostics[-1]['damping_min']:.4f}` / `{core_diagnostics[-1]['damping_mean']:.4f}` / `{core_diagnostics[-1]['damping_max']:.4f}`, state RMS across six steps is `{', '.join(f'{value:.4f}' for value in core_diagnostics[-1]['state_rms'])}`, and relative update norm decays to `{core_diagnostics[-1]['relative_update_norm'][-1]:.4f}`.
 
 The machine-readable summary, paired batch observations, depth curves, clipping data, timings, and plots in this directory are the authoritative evidence. Linear token-efficiency interpolation is reported only when the observed 100M–500M curve brackets the Transformer-at-500M target; no out-of-range extrapolation is used.
 """
