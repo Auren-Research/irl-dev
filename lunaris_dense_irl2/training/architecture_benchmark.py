@@ -335,7 +335,9 @@ def _load_checkpoint_model(
     state = {"model": model.state_dict()}
     dcp.load(state, checkpoint_id=checkpoint / "dcp", no_dist=True)
     model.load_state_dict(state["model"], strict=True)
-    model.set_regional_compile(False)
+    # Local FlexAttention is only memory-efficient through its compiled path;
+    # disabling this here materializes full LxL score tensors at sequence 4096.
+    model.set_regional_compile(config.parallel.regional_compile)
     return model.to(device), metadata
 
 
