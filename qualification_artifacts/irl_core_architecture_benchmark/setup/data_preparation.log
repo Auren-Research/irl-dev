@@ -1,4 +1,0 @@
-[data] wrote /shared-docker/irl-core-benchmark/data/architecture_benchmark/train/shard_000.npy (500,000,000 tokens)
-[data] wrote /shared-docker/irl-core-benchmark/data/architecture_benchmark/dev/shard_000.npy (4,194,304 tokens)
-[data] wrote /shared-docker/irl-core-benchmark/data/architecture_benchmark/holdout/shard_000.npy (4,194,304 tokens)
-[data] manifest: /shared-docker/irl-core-benchmark/data/architecture_benchmark/manifest.json
