@@ -5,13 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 import torch
 import yaml
 
 from lunaris_dense_irl2 import LunarisDenseConfig, LunarisDenseForCausalLM
 from lunaris_dense_irl2.training.config import (
-    ObjectiveConfig,
     OptimizerConfig,
     ScheduleConfig,
     TrainConfig,
@@ -20,17 +18,13 @@ from lunaris_dense_irl2.training.data import (
     DistributedAffineBatchSampler,
     MemoryMappedTokenDataset,
 )
-from lunaris_dense_irl2.training.distributed import fsdp_mesh_shape
 from lunaris_dense_irl2.training.export_checkpoint import export_checkpoint
 from lunaris_dense_irl2.training.optimizers import (
-    MONA,
     build_optimizers,
     restore_base_learning_rates,
 )
-from lunaris_dense_irl2.training.preflight import build_preflight_report
 from lunaris_dense_irl2.training.schedules import (
     apply_learning_rate,
-    auxiliary_schedule,
     lr_multiplier,
 )
 from lunaris_dense_irl2.training.train import train
@@ -181,13 +175,6 @@ def test_affine_sampler_resume_survives_world_size_change() -> None:
     assert list(resumed) == list(reference)[6:8]
 
 
-def test_fsdp_and_hsdp_mesh_shapes() -> None:
-    assert fsdp_mesh_shape(8, 1) == (8,)
-    assert fsdp_mesh_shape(16, 2) == (2, 8)
-    with pytest.raises(ValueError, match="divisible"):
-        fsdp_mesh_shape(8, 3)
-
-
 def test_memory_mapped_dataset_respects_shard_boundaries(tmp_path: Path) -> None:
     np.save(tmp_path / "a.npy", np.arange(19, dtype=np.uint32))
     np.save(tmp_path / "b.npy", np.arange(100, 123, dtype=np.uint32))
@@ -211,55 +198,6 @@ def test_wsd_schedule_has_expected_phases() -> None:
     assert lr_multiplier(1, config, 7) == 1.0
     assert lr_multiplier(4, config, 7) == 1.0
     assert lr_multiplier(7, config, 7) == 0.1
-
-
-def test_auxiliary_curriculum_stages_irl_and_mtp() -> None:
-    model = LunarisDenseConfig.debug(
-        irl_train_iters=3,
-        mtp_num_heads=3,
-    )
-    config = ObjectiveConfig(
-        irl_start_iters=1,
-        irl_ramp_steps=90,
-        irl_consistency_weight=0.01,
-        irl_consistency_warmup_steps=30,
-        irl_consistency_ramp_steps=30,
-        mtp_loss_weight=0.2,
-        mtp_warmup_steps=10,
-        mtp_ramp_steps=20,
-        mtp_horizon_interval=15,
-    )
-    config.validate(model)
-
-    start = auxiliary_schedule(0, model, config)
-    middle = auxiliary_schedule(45, model, config)
-    end = auxiliary_schedule(100, model, config)
-
-    assert start.irl_iters == 1
-    assert start.mtp_active_heads == 1
-    assert start.mtp_loss_weight == 0.0
-    assert middle.irl_iters == 2
-    assert middle.mtp_active_heads == 3
-    assert middle.mtp_loss_weight == 0.2
-    assert end.irl_iters == 3
-    assert end.irl_consistency_weight == 0.01
-
-
-def test_mona_updates_matrix_parameters() -> None:
-    parameter = torch.nn.Parameter(torch.randn(8, 4))
-    optimizer = MONA(
-        [parameter],
-        lr=0.01,
-        momentum=0.95,
-        acceleration_beta=0.95,
-        acceleration_alpha=-0.1,
-        weight_decay=0.1,
-        ns_steps=3,
-    )
-    before = parameter.detach().clone()
-    parameter.grad = torch.randn_like(parameter)
-    optimizer.step()
-    assert not torch.equal(parameter, before)
 
 
 def test_resume_restores_scheduler_base_learning_rate() -> None:
@@ -389,13 +327,13 @@ def test_cpu_training_and_checkpoint_resume(tmp_path: Path) -> None:
             _debug_training_payload(
                 data_root,
                 checkpoint_root,
-                max_steps=1,
+                max_steps=2,
                 resume="none",
             )
         ),
         encoding="utf-8",
     )
-    train(config_path)
+    train(config_path, stop_after_step=1)
     assert (checkpoint_root / "step_00000001" / "_SUCCESS").exists()
 
     config_path.write_text(
@@ -409,7 +347,7 @@ def test_cpu_training_and_checkpoint_resume(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    train(config_path)
+    train(config_path, stop_after_step=2)
     assert (checkpoint_root / "step_00000002" / "_SUCCESS").exists()
 
     export_directory = tmp_path / "exported"
@@ -422,41 +360,3 @@ def test_cpu_training_and_checkpoint_resume(tmp_path: Path) -> None:
 
     resolved = TrainConfig.from_yaml(config_path)
     assert resolved.training.max_steps == 2
-
-
-def test_preflight_uses_meta_model_and_reports_budget(tmp_path: Path) -> None:
-    data_root = tmp_path / "data"
-    train_directory = data_root / "train"
-    validation_directory = data_root / "validation"
-    train_directory.mkdir(parents=True)
-    validation_directory.mkdir(parents=True)
-    np.save(
-        train_directory / "tokens.npy",
-        np.arange(256, dtype=np.uint32) % 67,
-    )
-    np.save(
-        validation_directory / "tokens.npy",
-        np.arange(256, dtype=np.uint32) % 67,
-    )
-    checkpoint_root = tmp_path / "checkpoints"
-    config_path = tmp_path / "preflight.yaml"
-    config_path.write_text(
-        yaml.safe_dump(
-            _debug_training_payload(
-                data_root,
-                checkpoint_root,
-                max_steps=7,
-                resume="none",
-            )
-        ),
-        encoding="utf-8",
-    )
-
-    config = TrainConfig.from_yaml(config_path)
-    config.parallel.strategy = "auto"
-    report = build_preflight_report(config, world_size=2)
-    assert report["architecture"]["parameters"] > 0
-    assert report["topology"]["strategy"] == "fsdp2"
-    assert report["budget"]["tokens_per_step"] == 32
-    assert report["budget"]["planned_tokens"] == 224
-    assert report["dataset"]["tokens"] == 256

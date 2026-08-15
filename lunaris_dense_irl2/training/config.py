@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, TypeVar
 
 from ..config import LunarisDenseConfig
+from .model_factory import model_config_from_dict
 
 T = TypeVar("T")
 
@@ -38,7 +39,7 @@ class DataConfig:
     shuffle: bool = True
     seed: int = 1337
 
-    def validate(self, model: LunarisDenseConfig) -> None:
+    def validate(self, model: Any) -> None:
         """Validate data settings against the model context length."""
 
         if self.sequence_length is None:
@@ -258,7 +259,7 @@ class ObjectiveConfig:
     mtp_horizon_interval: int = 4_000
     mtp_horizon_decay: float = 0.7
 
-    def validate(self, model: LunarisDenseConfig) -> None:
+    def validate(self, model: Any) -> None:
         """Validate auxiliary losses against the instantiated architecture."""
 
         self.irl_start_iters = int(self.irl_start_iters)
@@ -293,6 +294,37 @@ class ObjectiveConfig:
                 "A training model with MTP heads requires a positive "
                 "objectives.mtp_loss_weight"
             )
+        if model.architecture_name == "lunaris_dense_transformer":
+            if self.irl_start_iters != 1 or self.irl_ramp_steps != 0:
+                raise ValueError(
+                    "The Transformer baseline requires fixed compatibility "
+                    "objectives.irl_start_iters=1 and irl_ramp_steps=0"
+                )
+            if self.irl_consistency_weight != 0.0:
+                raise ValueError(
+                    "The Transformer baseline requires "
+                    "objectives.irl_consistency_weight=0"
+                )
+            if self.mtp_loss_weight != 0.0:
+                raise ValueError(
+                    "The Transformer baseline requires objectives.mtp_loss_weight=0"
+                )
+        elif model.architecture_name == "lunaris_dense_irl_core":
+            if self.irl_start_iters != model.irl_train_iters:
+                raise ValueError(
+                    "IRL Core requires objectives.irl_start_iters to equal "
+                    "model.irl_train_iters (fixed-depth training)"
+                )
+            if self.irl_ramp_steps != 0:
+                raise ValueError(
+                    "IRL Core requires objectives.irl_ramp_steps=0"
+                )
+            if self.irl_consistency_weight != 0.0:
+                raise ValueError(
+                    "IRL Core requires objectives.irl_consistency_weight=0"
+                )
+            if self.mtp_loss_weight != 0.0:
+                raise ValueError("IRL Core requires objectives.mtp_loss_weight=0")
 
 
 @dataclass
@@ -363,7 +395,7 @@ class LoggingConfig:
 class TrainConfig:
     """Complete large-scale training configuration."""
 
-    model: LunarisDenseConfig = field(default_factory=LunarisDenseConfig)
+    model: Any = field(default_factory=LunarisDenseConfig)
     data: DataConfig = field(default_factory=DataConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
@@ -448,7 +480,7 @@ class TrainConfig:
         if unknown_sections:
             raise ValueError(f"Unknown training config sections: {unknown_sections}")
 
-        config = cls(model=LunarisDenseConfig.from_dict(model_values))
+        config = cls(model=model_config_from_dict(model_values))
         for name, section_type in section_types.items():
             values = payload.get(name, {})
             if not isinstance(values, dict):

@@ -11,10 +11,10 @@ from typing import Any, Dict
 
 import torch
 
-from ..model import LunarisDenseForCausalLM
 from .config import TrainConfig
 from .data import MemoryMappedTokenDataset
 from .distributed import fsdp_mesh_shape
+from .model_factory import build_model
 
 
 def _configuration_fingerprint(config: TrainConfig) -> str:
@@ -32,7 +32,7 @@ def _model_parameter_count(config: TrainConfig) -> int:
     """Count parameters on the meta device without allocating model storage."""
 
     with torch.device("meta"):
-        model = LunarisDenseForCausalLM(config.model)
+        model = build_model(config.model)
     return sum(parameter.numel() for parameter in model.parameters())
 
 

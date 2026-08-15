@@ -20,11 +20,16 @@ monitoring = ["wandb>=0.19"]
 
 [project.scripts]
 lunaris-train = "lunaris_dense_irl2.training.train:main"
+lunaris-core-train = "lunaris_dense_irl2.training.train:main"
 lunaris-export = "lunaris_dense_irl2.training.export_checkpoint:main"
 lunaris-preflight = "lunaris_dense_irl2.training.preflight:main"
 
 [tool.setuptools.packages.find]
-include = ["lunaris_dense_irl2*"]
+include = [
+    "lunaris_dense_irl2*",
+    "lunaris_dense_irl_core*",
+    "lunaris_dense_transformer*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

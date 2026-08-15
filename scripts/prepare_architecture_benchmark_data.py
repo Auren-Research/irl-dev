@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Validate and split one tokenized Ultra-FineWeb shard for qualification."""
+"""Prepare deterministic train, dev, and confirmation token ranges."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 
-def file_sha256(path: Path, chunk_bytes: int = 8 * 1024 * 1024) -> str:
-    """Return the SHA-256 digest of a small metadata file."""
+def file_sha256(path: Path, chunk_bytes: int = 64 * 1024 * 1024) -> str:
+    """Return a streaming SHA-256 digest without loading a shard into RAM."""
 
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -23,20 +24,18 @@ def file_sha256(path: Path, chunk_bytes: int = 8 * 1024 * 1024) -> str:
 
 
 def tokenizer_metadata(path: Path, expected_vocab_size: int) -> dict[str, Any]:
-    """Validate the tokenizer vocabulary and return reproducibility metadata."""
+    """Validate the benchmark tokenizer and return reproducibility metadata."""
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     model = payload.get("model")
     if not isinstance(model, dict) or not isinstance(model.get("vocab"), dict):
         raise ValueError(f"Tokenizer does not contain model.vocab: {path}")
-
     vocabulary = model["vocab"]
     if len(vocabulary) != expected_vocab_size:
         raise ValueError(
-            "Tokenizer vocabulary mismatch: "
-            f"expected {expected_vocab_size:,}, found {len(vocabulary):,}"
+            f"Expected {expected_vocab_size:,} tokenizer entries, "
+            f"found {len(vocabulary):,}"
         )
-
     expected_special_tokens = {
         "<unk>": 0,
         "<pad>": 1,
@@ -48,24 +47,19 @@ def tokenizer_metadata(path: Path, expected_vocab_size: int) -> dict[str, Any]:
     }
     if actual_special_tokens != expected_special_tokens:
         raise ValueError(
-            "Tokenizer special-token IDs do not match the model profile: "
+            "Tokenizer special-token IDs do not match the model profiles: "
             f"{actual_special_tokens}"
         )
-
     return {
-        "path": str(path.resolve()),
+        "source_path": str(path.resolve()),
         "sha256": file_sha256(path),
         "vocab_size": len(vocabulary),
         "special_tokens": actual_special_tokens,
     }
 
 
-def token_range(
-    tokens: np.ndarray,
-    *,
-    chunk_tokens: int,
-) -> tuple[int, int]:
-    """Scan the shard in bounded chunks and return its minimum and maximum IDs."""
+def token_range(tokens: np.ndarray, chunk_tokens: int) -> tuple[int, int]:
+    """Scan integer IDs in bounded chunks."""
 
     minimum: int | None = None
     maximum: int | None = None
@@ -73,14 +67,10 @@ def token_range(
         chunk = tokens[start : start + chunk_tokens]
         chunk_minimum = int(chunk.min())
         chunk_maximum = int(chunk.max())
-        minimum = (
-            chunk_minimum if minimum is None else min(minimum, chunk_minimum)
-        )
-        maximum = (
-            chunk_maximum if maximum is None else max(maximum, chunk_maximum)
-        )
+        minimum = chunk_minimum if minimum is None else min(minimum, chunk_minimum)
+        maximum = chunk_maximum if maximum is None else max(maximum, chunk_maximum)
     if minimum is None or maximum is None:
-        raise ValueError("The source shard is empty")
+        raise ValueError("The source token shard is empty")
     return minimum, maximum
 
 
@@ -90,7 +80,7 @@ def validate_existing(
     expected_tokens: int,
     expected_dtype: np.dtype[Any],
 ) -> bool:
-    """Return whether an existing output is a complete compatible NumPy shard."""
+    """Return whether an existing split is complete and compatible."""
 
     if not path.exists():
         return False
@@ -104,7 +94,7 @@ def validate_existing(
     if mmap is not None:
         mmap.close()
     if not valid:
-        raise ValueError(f"Existing output is incomplete or incompatible: {path}")
+        raise ValueError(f"Existing split is incomplete or incompatible: {path}")
     return True
 
 
@@ -116,7 +106,7 @@ def copy_slice(
     count: int,
     chunk_tokens: int,
 ) -> None:
-    """Copy one contiguous source range into an atomic standalone NPY shard."""
+    """Copy a disjoint contiguous range into an atomic NPY shard."""
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     if validate_existing(
@@ -148,7 +138,7 @@ def copy_slice(
 
 
 def prepare(args: argparse.Namespace) -> dict[str, Any]:
-    """Prepare deterministic non-overlapping train and validation shards."""
+    """Create the frozen non-overlapping architecture-benchmark split."""
 
     source_path = args.source.resolve()
     tokenizer_path = args.tokenizer.resolve()
@@ -157,10 +147,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         raise FileNotFoundError(source_path)
     if not tokenizer_path.is_file():
         raise FileNotFoundError(tokenizer_path)
-    if args.train_tokens <= 0 or args.validation_tokens <= 0:
-        raise ValueError("Train and validation token counts must be positive")
-    if args.chunk_tokens <= 0:
-        raise ValueError("chunk-tokens must be positive")
+    for name in ("train_tokens", "dev_tokens", "holdout_tokens", "chunk_tokens"):
+        if int(getattr(args, name)) <= 0:
+            raise ValueError(f"{name.replace('_', '-')} must be positive")
 
     source = np.load(source_path, mmap_mode="r", allow_pickle=False)
     if source.ndim != 1:
@@ -168,64 +157,69 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     if not np.issubdtype(source.dtype, np.integer):
         raise TypeError("The source token shard must have an integer dtype")
 
-    total_tokens = int(source.shape[0])
-    validation_start = total_tokens - args.validation_tokens
-    if args.train_tokens > validation_start:
+    ranges = {
+        "train": (0, args.train_tokens),
+        "dev": (args.train_tokens, args.dev_tokens),
+        "holdout": (
+            args.train_tokens + args.dev_tokens,
+            args.holdout_tokens,
+        ),
+    }
+    required_tokens = sum(count for _, count in ranges.values())
+    if required_tokens > int(source.shape[0]):
         raise ValueError(
-            "Train and validation ranges overlap: "
-            f"train={args.train_tokens:,}, validation_start={validation_start:,}"
+            f"Source has {int(source.shape[0]):,} tokens but the frozen splits "
+            f"require {required_tokens:,}"
         )
 
-    minimum_token_id, maximum_token_id = token_range(
-        source,
-        chunk_tokens=args.chunk_tokens,
-    )
+    minimum_token_id, maximum_token_id = token_range(source, args.chunk_tokens)
     if minimum_token_id < 0 or maximum_token_id >= args.vocab_size:
         raise ValueError(
-            "Token IDs are outside the model vocabulary: "
-            f"range=[{minimum_token_id}, {maximum_token_id}], "
-            f"vocab_size={args.vocab_size}"
+            "Token IDs fall outside the benchmark vocabulary: "
+            f"[{minimum_token_id}, {maximum_token_id}]"
         )
 
+    split_metadata: dict[str, Any] = {}
+    for split, (start, count) in ranges.items():
+        path = output_root / split / "shard_000.npy"
+        copy_slice(
+            source,
+            path,
+            start=start,
+            count=count,
+            chunk_tokens=args.chunk_tokens,
+        )
+        split_metadata[split] = {
+            "path": str(path),
+            "start": start,
+            "end_exclusive": start + count,
+            "tokens": count,
+            "complete_sequences": count // args.sequence_length,
+            "unused_tail_tokens": count % args.sequence_length,
+            "sha256": file_sha256(path),
+        }
+
     tokenizer = tokenizer_metadata(tokenizer_path, args.vocab_size)
-    train_path = output_root / "train" / "shard_000.npy"
-    validation_path = output_root / "validation" / "shard_000.npy"
-    copy_slice(
-        source,
-        train_path,
-        start=0,
-        count=args.train_tokens,
-        chunk_tokens=args.chunk_tokens,
-    )
-    copy_slice(
-        source,
-        validation_path,
-        start=validation_start,
-        count=args.validation_tokens,
-        chunk_tokens=args.chunk_tokens,
-    )
+    frozen_tokenizer = output_root / "lunaris-tokenizer.json"
+    shutil.copyfile(tokenizer_path, frozen_tokenizer)
+    tokenizer["frozen_path"] = str(frozen_tokenizer)
 
     manifest = {
-        "format_version": 1,
+        "schema_version": 1,
         "source": {
             "path": str(source_path),
-            "file_size_bytes": source_path.stat().st_size,
+            "bytes": source_path.stat().st_size,
             "dtype": str(source.dtype),
-            "total_tokens": total_tokens,
+            "tokens": int(source.shape[0]),
             "minimum_token_id": minimum_token_id,
             "maximum_token_id": maximum_token_id,
+            "sha256": (
+                None if args.skip_source_sha256 else file_sha256(source_path)
+            ),
         },
         "tokenizer": tokenizer,
-        "train": {
-            "path": str(train_path),
-            "start": 0,
-            "tokens": args.train_tokens,
-        },
-        "validation": {
-            "path": str(validation_path),
-            "start": validation_start,
-            "tokens": args.validation_tokens,
-        },
+        "sequence_length": args.sequence_length,
+        "splits": split_metadata,
         "ranges_overlap": False,
     }
     manifest_path = output_root / "manifest.json"
@@ -245,22 +239,28 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(
-        description="Prepare one Ultra-FineWeb NPY shard for MI300X qualification."
+        description="Prepare the controlled 135M architecture benchmark data."
     )
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path("data/qualification"),
+        default=Path("data/architecture_benchmark"),
     )
-    parser.add_argument("--train-tokens", type=int, default=100_000_000)
-    parser.add_argument("--validation-tokens", type=int, default=1_000_000)
+    parser.add_argument("--train-tokens", type=int, default=500_000_000)
+    parser.add_argument("--dev-tokens", type=int, default=4_194_304)
+    parser.add_argument("--holdout-tokens", type=int, default=4_194_304)
+    parser.add_argument("--sequence-length", type=int, default=4_096)
     parser.add_argument("--vocab-size", type=int, default=65_536)
-    parser.add_argument("--chunk-tokens", type=int, default=4_000_000)
+    parser.add_argument("--chunk-tokens", type=int, default=8_000_000)
+    parser.add_argument(
+        "--skip-source-sha256",
+        action="store_true",
+        help="Skip only the expensive full-source digest; split digests remain",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     prepare(parse_args())
-
