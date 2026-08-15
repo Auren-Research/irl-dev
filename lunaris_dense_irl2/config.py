@@ -140,8 +140,10 @@ class LunarisDenseConfig:
         if "L" in self.attention_pattern and self.local_window > self.max_seq_len:
             self.local_window = self.max_seq_len
         self.attention_backend = self.attention_backend.lower()
-        if self.attention_backend not in {"auto", "sdpa", "flex"}:
-            raise ValueError("attention_backend must be auto, sdpa, or flex")
+        if self.attention_backend not in {"auto", "sdpa", "flex", "flash"}:
+            raise ValueError(
+                "attention_backend must be auto, sdpa, flex, or flash"
+            )
         if self.flex_block_size & (self.flex_block_size - 1):
             raise ValueError("flex_block_size must be a power of two")
 

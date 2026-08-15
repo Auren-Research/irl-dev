@@ -1,0 +1,7 @@
+stage,attention_pattern,attention_backend,compile_mode,loss_chunk_size,tokens_per_second,peak_allocated_hbm_gib,peak_reserved_hbm_gib,decision
+frozen_reference,LLLG,flex_regional,regional,1024,93875.227139,53.101264,53.853516,reference
+chunked_loss_sweep_8192,LLLG,flex_regional,regional,8192,97568,52.01,,keep
+fused_eager_flash,LLLG,flash,eager,8192,123990,42.64,43.85,keep
+compiled_flex,LLLG,flex,full_model_default,8192,179320,28.38,30.96,reject_slower_than_flash
+compiled_flash,LLLG,flash,full_model_default,8192,188429.640327,32.002041,32.949219,systems_winner
+compiled_flash_one_global,LLLLLLLLLLLLLLLG,flash,full_model_default,8192,196232.872605,32.002041,32.949219,final_winner

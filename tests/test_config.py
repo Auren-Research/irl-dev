@@ -23,3 +23,8 @@ def test_unknown_configuration_fields_are_rejected() -> None:
 def test_invalid_head_layout_is_rejected() -> None:
     with pytest.raises(ValueError, match="divisible"):
         LunarisDenseConfig.debug(d_model=130)
+
+
+def test_flash_attention_backend_is_valid() -> None:
+    config = LunarisDenseConfig.debug(attention_backend="flash")
+    assert config.attention_backend == "flash"

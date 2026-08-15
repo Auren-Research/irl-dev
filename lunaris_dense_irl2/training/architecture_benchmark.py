@@ -624,6 +624,8 @@ def qualify_throughput(
     allocation_started = time.perf_counter()
     model = build_model(config.model).to(device)
     model.set_regional_compile(config.parallel.regional_compile)
+    if config.parallel.compile:
+        model.compile(mode=config.parallel.compile_mode, dynamic=False)
     optimizers = build_optimizers(model, config.optimizer)
     clipper = GradientClipper(config.training)
     allocation_seconds = time.perf_counter() - allocation_started

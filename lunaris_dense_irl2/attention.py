@@ -21,10 +21,24 @@ try:
     )
 
     _FLEX_ATTENTION_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     create_block_mask = None  # type: ignore[assignment]
     flex_attention = None  # type: ignore[assignment]
     _FLEX_ATTENTION_AVAILABLE = False
+
+try:
+    from flash_attn import flash_attn_func
+
+    _FLASH_ATTENTION_AVAILABLE = True
+except (ImportError, OSError):
+    flash_attn_func = None  # type: ignore[assignment]
+    _FLASH_ATTENTION_AVAILABLE = False
+
+
+def flash_attention_available() -> bool:
+    """Return whether the optional FlashAttention training backend imported."""
+
+    return _FLASH_ATTENTION_AVAILABLE
 
 
 @lru_cache(maxsize=1)
@@ -164,13 +178,13 @@ class GroupedQueryAttention(nn.Module):
         self.flex_block_size = int(config.flex_block_size)
         self.regional_compile_enabled = True
 
-        self.q_proj = nn.Linear(
+        self.q_width = config.n_heads * config.head_dim
+        self.kv_width = config.kv_dim
+        self.qkv_proj = nn.Linear(
             config.d_model,
-            config.n_heads * config.head_dim,
+            self.q_width + 2 * self.kv_width,
             bias=False,
         )
-        self.k_proj = nn.Linear(config.d_model, config.kv_dim, bias=False)
-        self.v_proj = nn.Linear(config.d_model, config.kv_dim, bias=False)
         self.o_proj = nn.Linear(
             config.n_heads * config.head_dim,
             config.d_model,
@@ -195,6 +209,41 @@ class GroupedQueryAttention(nn.Module):
         self.dropout_p = float(config.attention_dropout)
         self.output_dropout = nn.Dropout(config.dropout)
 
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict[str, object],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        """Upgrade separate Q/K/V projections from version-one checkpoints."""
+
+        fused_key = prefix + "qkv_proj.weight"
+        source_keys = [
+            prefix + "q_proj.weight",
+            prefix + "k_proj.weight",
+            prefix + "v_proj.weight",
+        ]
+        if fused_key not in state_dict and all(
+            key in state_dict for key in source_keys
+        ):
+            state_dict[fused_key] = torch.cat(
+                tuple(state_dict.pop(key) for key in source_keys),
+                dim=0,
+            )
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
     def _use_flex_attention(
         self,
         query: torch.Tensor,
@@ -205,7 +254,10 @@ class GroupedQueryAttention(nn.Module):
     ) -> bool:
         """Select sparse FlexAttention only for its safe fused training path."""
 
-        if self.sliding_window is None or self.attention_backend == "sdpa":
+        if (
+            self.sliding_window is None
+            or self.attention_backend not in {"auto", "flex"}
+        ):
             return False
         supported = (
             _FLEX_ATTENTION_AVAILABLE
@@ -223,6 +275,69 @@ class GroupedQueryAttention(nn.Module):
                 "attention dropout during training"
             )
         return supported
+
+    def _use_flash_attention(
+        self,
+        query: torch.Tensor,
+        *,
+        layer_cache: Optional[LayerKVCache],
+        attention_mask: Optional[torch.Tensor],
+        document_ids: Optional[torch.Tensor],
+    ) -> bool:
+        """Select FlashAttention for unmasked fixed-length training batches."""
+
+        if self.attention_backend != "flash":
+            return False
+        supported = (
+            _FLASH_ATTENTION_AVAILABLE
+            and query.device.type == "cuda"
+            and layer_cache is None
+            and attention_mask is None
+            and document_ids is None
+            and query.size(2) > 1
+            and (not self.training or self.dropout_p == 0.0)
+        )
+        if self.attention_backend == "flash" and not supported:
+            fast_path_requested = (
+                query.device.type == "cuda"
+                and layer_cache is None
+                and attention_mask is None
+                and document_ids is None
+                and query.size(2) > 1
+                and (not self.training or self.dropout_p == 0.0)
+            )
+            if fast_path_requested and not _FLASH_ATTENTION_AVAILABLE:
+                raise RuntimeError(
+                    "attention_backend=flash requires the flash-attn package"
+                )
+        return supported
+
+    def _flash_attention(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run causal FlashAttention, including the exact local window."""
+
+        if flash_attn_func is None:
+            raise RuntimeError("FlashAttention is unavailable")
+        window_size = (
+            (-1, -1)
+            if self.sliding_window is None
+            else (self.sliding_window - 1, 0)
+        )
+        query = query.to(value.dtype)
+        key = key.to(value.dtype)
+        attended = flash_attn_func(
+            query.transpose(1, 2),
+            key.transpose(1, 2),
+            value.transpose(1, 2),
+            dropout_p=0.0,
+            causal=True,
+            window_size=window_size,
+        )
+        return attended.transpose(1, 2)
 
     def _flex_local_attention(
         self,
@@ -313,19 +428,23 @@ class GroupedQueryAttention(nn.Module):
 
         batch_size, sequence_length, _ = hidden_states.shape
 
-        query = self.q_proj(hidden_states).view(
+        query, key, value = self.qkv_proj(hidden_states).split(
+            (self.q_width, self.kv_width, self.kv_width),
+            dim=-1,
+        )
+        query = query.view(
             batch_size,
             sequence_length,
             self.n_heads,
             self.head_dim,
         )
-        key = self.k_proj(hidden_states).view(
+        key = key.view(
             batch_size,
             sequence_length,
             self.n_kv_heads,
             self.head_dim,
         )
-        value = self.v_proj(hidden_states).view(
+        value = value.view(
             batch_size,
             sequence_length,
             self.n_kv_heads,
@@ -361,6 +480,12 @@ class GroupedQueryAttention(nn.Module):
             combined_value = value
             key_positions = position_ids
 
+        use_flash_attention = self._use_flash_attention(
+            query,
+            layer_cache=layer_cache,
+            attention_mask=attention_mask,
+            document_ids=document_ids,
+        )
         use_flex_attention = self._use_flex_attention(
             query,
             layer_cache=layer_cache,
@@ -374,7 +499,13 @@ class GroupedQueryAttention(nn.Module):
             and document_ids is None
             and sequence_length > 1
         )
-        if use_flex_attention:
+        if use_flash_attention:
+            attended = self._flash_attention(
+                query,
+                combined_key,
+                combined_value,
+            )
+        elif use_flex_attention:
             attended = self._flex_local_attention(
                 query,
                 combined_key,
@@ -394,7 +525,7 @@ class GroupedQueryAttention(nn.Module):
             )
             is_causal = False
 
-        if not use_flex_attention:
+        if not use_flash_attention and not use_flex_attention:
             attended = self._native_sdpa(
                 query,
                 combined_key,
