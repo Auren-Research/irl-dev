@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import torch
 
 from lunaris_dense_irl2 import LunarisDenseConfig, LunarisDenseForCausalLM
+from lunaris_dense_irl2.irl2 import IRL2Cell
 
 
 def tiny_config(**overrides: object) -> LunarisDenseConfig:
@@ -37,13 +39,35 @@ def test_shapes_loss_and_gradients() -> None:
 
     output = model(input_ids, labels=input_ids, return_irl_stats=True)
     assert output.logits.shape == (2, 8, config.vocab_size)
-    assert output.loss is not None
+    assert output.loss is not None and torch.isfinite(output.loss)
     assert output.irl_diagnostics is not None
     assert len(output.irl_diagnostics) == config.n_layers
+    assert all(
+        diagnostics.iterations == config.irl_train_iters
+        for diagnostics in output.irl_diagnostics
+    )
 
     output.loss.backward()
     for name, parameter in model.named_parameters():
         assert parameter.grad is not None, name
+        assert torch.isfinite(parameter.grad).all(), name
+
+
+def test_recurrence_reuses_one_parameter_set_at_configured_depth() -> None:
+    torch.manual_seed(1)
+    config = tiny_config()
+    cell = IRL2Cell(config)
+    anchor = torch.randn(2, 5, config.d_model)
+    parameter_ids = {id(parameter) for parameter in cell.parameters()}
+
+    output_t1, _, _ = cell(anchor, n_iters=1)
+    output_t4, diagnostics, _ = cell(anchor, n_iters=4, return_stats=True)
+
+    assert parameter_ids == {id(parameter) for parameter in cell.parameters()}
+    assert output_t1.shape == output_t4.shape == anchor.shape
+    assert not torch.allclose(output_t1, output_t4)
+    assert diagnostics is not None
+    assert diagnostics.residual_norms.shape == (4,)
 
 
 def test_cached_logits_match_full_forward() -> None:
@@ -93,6 +117,20 @@ def test_packed_documents_are_isolated() -> None:
     torch.testing.assert_close(logits_a[:, 2:], logits_b[:, 2:], rtol=1e-5, atol=1e-6)
 
 
+def test_no_future_leakage() -> None:
+    torch.manual_seed(11)
+    model = LunarisDenseForCausalLM(tiny_config(attention_pattern="G")).eval()
+    first = torch.tensor([[5, 7, 11, 13, 17, 19]])
+    second = first.clone()
+    second[:, -1] = 23
+
+    with torch.no_grad():
+        logits_a = model(first).logits
+        logits_b = model(second).logits
+
+    torch.testing.assert_close(logits_a[:, :-1], logits_b[:, :-1], rtol=0.0, atol=1e-6)
+
+
 def test_save_and_load_round_trip(tmp_path: Path) -> None:
     torch.manual_seed(6)
     config = tiny_config()
@@ -101,6 +139,8 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
 
     with torch.no_grad():
         expected = model(input_ids).logits
+        repeated = model(input_ids).logits
+    torch.testing.assert_close(repeated, expected, rtol=0.0, atol=0.0)
     model.save_pretrained(tmp_path)
     restored = LunarisDenseForCausalLM.from_pretrained(tmp_path).eval()
     with torch.no_grad():
@@ -121,6 +161,43 @@ def test_generation_uses_cache() -> None:
         temperature=0.0,
     )
     assert generated.shape == (2, 7)
+
+
+def test_bf16_forward_backward() -> None:
+    torch.manual_seed(12)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    config = tiny_config()
+    model = LunarisDenseForCausalLM(config).to(device=device, dtype=torch.bfloat16)
+    input_ids = torch.randint(0, config.vocab_size, (1, 7), device=device)
+    try:
+        output = model(input_ids, labels=input_ids, return_logits=False)
+        assert output.loss is not None and torch.isfinite(output.loss)
+        output.loss.backward()
+    except RuntimeError as exc:
+        if device.type == "cpu" and "BFloat16" in str(exc):
+            pytest.skip(f"This CPU build lacks BF16 support: {exc}")
+        raise
+    for name, parameter in model.named_parameters():
+        assert parameter.grad is not None, name
+        assert torch.isfinite(parameter.grad).all(), name
+
+
+@pytest.mark.parametrize("policy", ["block", "irl"])
+def test_gradient_checkpointing_preserves_gradients(policy: str) -> None:
+    torch.manual_seed(8)
+    config = tiny_config(
+        use_gradient_checkpointing=True,
+        gradient_checkpointing_policy=policy,
+    )
+    model = LunarisDenseForCausalLM(config).train()
+    input_ids = torch.randint(0, config.vocab_size, (2, 7))
+
+    output = model(input_ids, labels=input_ids)
+    assert output.loss is not None
+    output.loss.backward()
+
+    for name, parameter in model.named_parameters():
+        assert parameter.grad is not None, name
 
 
 def test_mtp_irl_objective_reaches_all_auxiliary_parameters() -> None:

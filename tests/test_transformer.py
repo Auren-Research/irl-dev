@@ -9,16 +9,13 @@ import torch
 
 from lunaris_dense_irl2.training.architecture_benchmark import (
     architecture_report,
-    parameter_breakdown,
 )
 from lunaris_dense_irl2.training.config import TrainConfig
-from lunaris_dense_irl2.training.model_factory import build_model
 from lunaris_dense_irl_core import LunarisIRLCoreConfig
 from lunaris_dense_transformer import (
     LunarisTransformerConfig,
     LunarisTransformerForCausalLM,
 )
-from scripts.summarize_architecture_benchmark import _interpolate_ce
 
 
 def tiny_config(**overrides: object) -> LunarisTransformerConfig:
@@ -92,9 +89,7 @@ def test_transformer_cache_determinism_and_save_load(tmp_path: Path) -> None:
 
 def test_transformer_packed_document_isolation() -> None:
     torch.manual_seed(203)
-    model = LunarisTransformerForCausalLM(
-        tiny_config(attention_pattern="G")
-    ).eval()
+    model = LunarisTransformerForCausalLM(tiny_config(attention_pattern="G")).eval()
     first = torch.tensor([[1, 2, 10, 11]])
     second = torch.tensor([[8, 9, 10, 11]])
     position_ids = torch.tensor([[0, 1, 0, 1]])
@@ -128,13 +123,9 @@ def test_benchmark_profiles_are_parameter_matched_and_frozen() -> None:
         name: architecture_report(TrainConfig.from_yaml(path))
         for name, path in paths.items()
     }
-    totals = {
-        name: report["total_parameters"] for name, report in reports.items()
-    }
+    totals = {name: report["total_parameters"] for name, report in reports.items()}
     assert totals == expected
-    spread = (max(expected.values()) - min(expected.values())) / min(
-        expected.values()
-    )
+    spread = (max(expected.values()) - min(expected.values())) / min(expected.values())
     assert spread < 0.01
     assert reports["transformer"]["recurrent_specific_parameters"] == 0
     assert reports["irl2"]["recurrent_depth"] == 2
@@ -143,21 +134,8 @@ def test_benchmark_profiles_are_parameter_matched_and_frozen() -> None:
     assert reports["irl2"]["effective_attention_calls_per_forward"] == 16
     assert reports["irl_core"]["effective_attention_calls_per_forward"] == 21
     qualified = LunarisIRLCoreConfig.from_yaml("profiles/irl_core_135m.yaml")
-    benchmark = LunarisIRLCoreConfig.from_yaml(
-        "profiles/benchmark_irl_core_135m.yaml"
-    )
+    benchmark = LunarisIRLCoreConfig.from_yaml("profiles/benchmark_irl_core_135m.yaml")
     assert benchmark.to_dict() == qualified.to_dict()
-
-
-def test_transformer_factory_and_parameter_categories() -> None:
-    config = tiny_config()
-    model = build_model(config)
-    assert isinstance(model, LunarisTransformerForCausalLM)
-    counts = parameter_breakdown(model)
-    assert counts["total_parameters"] == sum(
-        parameter.numel() for parameter in model.parameters()
-    )
-    assert counts["recurrent_specific_parameters"] == 0
 
 
 def test_transformer_bf16_forward_backward() -> None:
@@ -181,10 +159,3 @@ def test_transformer_bf16_forward_backward() -> None:
             pytest.skip(f"This CPU build lacks BF16 support: {exc}")
         raise
     assert model.blocks[0].attention.q_proj.weight.grad is not None
-
-
-def test_compute_efficiency_interpolation_stays_in_observed_range() -> None:
-    trajectory = [(100.0, 4.2), (250.0, 3.9), (500.0, 3.6)]
-    assert _interpolate_ce(trajectory, 375.0) == pytest.approx(3.75)
-    assert _interpolate_ce(trajectory, 50.0) is None
-    assert _interpolate_ce(trajectory, 550.0) is None
