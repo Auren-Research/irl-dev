@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "result": "accepted",
+  "implementation_commit": "cbdcbdfa2b5cf321f00421160200efc5c0b16acf",
+  "production_config_sha256": "65d79580e1b37519d21fd7884550246fb9216e03b240a2f24781220476d3af82",
+  "data": {
+    "repository": "meryyllebr543/lunaris-ultrafineweb-20b-tokenized",
+    "revision": "64b5dc936b797823c9dcb780430760f4c0048a84",
+    "source_shard_sha256": "ce5901a9bdfc21a54f774faf47dc845fb03e2b61332577b575a78c07cf107590",
+    "tokenizer_sha256": "081ed20be80cac199d24b5e683d7cf266a5421213425ba7178895ab707d17a78",
+    "train_sha256": "53ca256630a1cb090438a0b9e7e42b0ee93804be86e6700f5acd966a5b0a3a38",
+    "dev_sha256": "72e6ef04dc6977248ae88e2d339c5a994a0640941775babbf3d26d3ae5b69527",
+    "holdout_sha256": "2875121cd11b7a7d680459d25d8ae6cb6ef55e698c4891d11f053d959804016a",
+    "sequence_length": 4096,
+    "training_tokens": 499974144
+  },
+  "hardware": {
+    "device": "AMD Instinct MI300X VF",
+    "torch": "2.12.0+rocm7.14.0a20260608",
+    "hip": "7.14.60850",
+    "precision": "bf16",
+    "world_size": 1
+  },
+  "frozen_reference": {
+    "parameters": 132197136,
+    "holdout_cross_entropy": 3.594242898747325,
+    "median_tokens_per_second": 93875.22713946816,
+    "end_to_end_tokens_per_second": 93104.74357699815,
+    "estimated_training_flops_per_token": 1396703232.0,
+    "aggregate_training_wall_seconds": 5370.017947437002,
+    "peak_allocated_hbm_gib": 53.10126447677612,
+    "peak_reserved_hbm_gib": 53.853515625,
+    "cumulative_clipped_step_fraction": 0.023135404605582027
+  },
+  "production_winner": {
+    "profile": "training_profiles/production_irl2_135m_1x_mi300x.yaml",
+    "parameters": 132197136,
+    "attention_pattern": "LLLLLLLLLLLLLLLG",
+    "irl_train_iterations": 2,
+    "holdout_cross_entropy": 3.583993498235941,
+    "dev_cross_entropy": 3.5865150429308414,
+    "median_tokens_per_second": 193309.97318866343,
+    "end_to_end_tokens_per_second": 185726.57703921178,
+    "qualification_tokens_per_second": 196232.87260472772,
+    "estimated_training_flops_per_token": 1311768576.0,
+    "aggregate_training_wall_seconds": 2691.9903008520005,
+    "uninterrupted_projected_wall_seconds": 2547.8613107147394,
+    "peak_allocated_hbm_gib": 32.01571989059448,
+    "peak_reserved_hbm_gib": 33.951171875,
+    "qualification_peak_allocated_hbm_gib": 32.00204133987427,
+    "qualification_peak_reserved_hbm_gib": 32.94921875,
+    "cumulative_clipped_step_fraction": 0.022873247244701363
+  },
+  "comparison": {
+    "holdout_cross_entropy_delta": -0.010249400511384076,
+    "paired_standard_error": 0.0007949478044257176,
+    "paired_ci95_low": -0.011807498208058483,
+    "paired_ci95_high": -0.00869130281470967,
+    "paired_batch_wins": 115,
+    "paired_batches": 128,
+    "median_throughput_ratio": 2.0592224283139946,
+    "end_to_end_throughput_ratio": 1.9948132598165083,
+    "actual_wall_time_ratio": 0.5013000565737088,
+    "flops_per_token_ratio": 0.9391891891891891,
+    "allocated_hbm_ratio": 0.6029182206121774,
+    "reserved_hbm_ratio": 0.6304355710296304,
+    "tokens_per_allocated_gib_ratio": 3.4154257707175413,
+    "estimated_baseline_tflops_per_second": 131.1158331504293,
+    "estimated_winner_tflops_per_second": 253.5779482562912,
+    "estimated_baseline_model_flop_utilization": 0.10028746607803984,
+    "estimated_winner_model_flop_utilization": 0.19395590351559674
+  },
+  "recurrence_depth_dev_cross_entropy": {
+    "1": 6.504122477024794,
+    "2": 3.5865150429308414,
+    "4": 4.141421306878328,
+    "6": 3.920981278643012,
+    "8": 4.06214490160346,
+    "12": 4.051684200763702
+  },
+  "learned_damping": {
+    "initial": 0.9,
+    "final_layer_min": 0.6759836077690125,
+    "final_layer_mean": 0.7708769701421261,
+    "final_layer_max": 0.8793615698814392
+  },
+  "scale_recommendation": "ready_for_scale_pilot_after_distributed_qualification"
+}

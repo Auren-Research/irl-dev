@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 import torch
 
+from ..attention import flash_attention_available
 from .config import TrainConfig
 from .data import MemoryMappedTokenDataset
 from .distributed import fsdp_mesh_shape
@@ -148,10 +149,14 @@ def build_preflight_report(
             "The selected matrix optimizer remains experimental; AdamW is the "
             "quality-preserving production baseline."
         )
-    if config.parallel.compile:
+    if (
+        config.model.attention_backend == "flash"
+        and not flash_attention_available()
+    ):
         warnings.append(
-            "Whole-model compilation is not the MI300X-validated path; regional "
-            "compilation is the current default."
+            "attention_backend=flash was selected but flash-attn could not be "
+            "imported on this host. Install a build matching the accelerator "
+            "runtime before launching."
         )
     if config.parallel.precision == "fp16":
         warnings.append(

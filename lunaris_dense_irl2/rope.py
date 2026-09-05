@@ -15,7 +15,7 @@ def rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 class RotaryEmbedding(nn.Module):
-    """Compute RoPE cosine and sine values from absolute positions."""
+    """Compute compact RoPE cosine and sine values from absolute positions."""
 
     def __init__(
         self,
@@ -44,7 +44,7 @@ class RotaryEmbedding(nn.Module):
         *,
         dtype: torch.dtype,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return broadcastable cosine and sine tensors."""
+        """Return pairwise cosine and sine tensors broadcastable over heads."""
 
         if position_ids.dim() == 1:
             position_ids = position_ids.unsqueeze(0)
@@ -54,11 +54,28 @@ class RotaryEmbedding(nn.Module):
             )
 
         positions = position_ids.float() / self.scaling_factor
-        phase = torch.einsum("bs,d->bsd", positions, self.inverse_frequencies.float())
-        phase = torch.repeat_interleave(phase, repeats=2, dim=-1)
+        phase = positions.unsqueeze(-1) * self.inverse_frequencies.float()
         cos = phase.cos().unsqueeze(1).to(dtype)
         sin = phase.sin().unsqueeze(1).to(dtype)
         return cos, sin
+
+
+def apply_rotary_embedding_single(
+    x: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+) -> torch.Tensor:
+    """Rotate adjacent feature pairs without expanding trigonometric tensors."""
+
+    pairs = x.unflatten(-1, (-1, 2))
+    x_even, x_odd = pairs.unbind(dim=-1)
+    return torch.stack(
+        (
+            x_even * cos - x_odd * sin,
+            x_odd * cos + x_even * sin,
+        ),
+        dim=-1,
+    ).flatten(-2)
 
 
 def apply_rotary_embedding(
@@ -70,6 +87,6 @@ def apply_rotary_embedding(
     """Apply one RoPE transform to query and key tensors."""
 
     return (
-        query * cos + rotate_half(query) * sin,
-        key * cos + rotate_half(key) * sin,
+        apply_rotary_embedding_single(query, cos, sin),
+        apply_rotary_embedding_single(key, cos, sin),
     )

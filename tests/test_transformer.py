@@ -158,4 +158,4 @@ def test_transformer_bf16_forward_backward() -> None:
         if device.type == "cpu" and "BFloat16" in str(exc):
             pytest.skip(f"This CPU build lacks BF16 support: {exc}")
         raise
-    assert model.blocks[0].attention.q_proj.weight.grad is not None
+    assert model.blocks[0].attention.qkv_proj.weight.grad is not None

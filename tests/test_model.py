@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from lunaris_dense_irl2 import LunarisDenseConfig, LunarisDenseForCausalLM
+from lunaris_dense_irl2.attention import flash_attention_available
 from lunaris_dense_irl2.irl2 import IRL2Cell
 
 
@@ -149,6 +150,35 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
 
 
+def test_version_one_projection_weights_load_strictly() -> None:
+    """Separate projection checkpoints migrate to fused production weights."""
+
+    torch.manual_seed(61)
+    model = LunarisDenseForCausalLM(tiny_config())
+    expected = model.state_dict()
+    legacy = {name: value.clone() for name, value in expected.items()}
+    for layer_index in range(model.config.n_layers):
+        attention_prefix = f"blocks.{layer_index}.attention."
+        qkv = legacy.pop(attention_prefix + "qkv_proj.weight")
+        q_width = model.config.n_heads * model.config.head_dim
+        kv_width = model.config.kv_dim
+        query, key, value = qkv.split((q_width, kv_width, kv_width), dim=0)
+        legacy[attention_prefix + "q_proj.weight"] = query
+        legacy[attention_prefix + "k_proj.weight"] = key
+        legacy[attention_prefix + "v_proj.weight"] = value
+
+        ffn_prefix = f"blocks.{layer_index}.irl.ffn."
+        gate_up = legacy.pop(ffn_prefix + "gate_up_proj.weight")
+        gate, up = gate_up.chunk(2, dim=0)
+        legacy[ffn_prefix + "gate_proj.weight"] = gate
+        legacy[ffn_prefix + "up_proj.weight"] = up
+
+    restored = LunarisDenseForCausalLM(tiny_config())
+    restored.load_state_dict(legacy, strict=True)
+    for name, tensor in restored.state_dict().items():
+        torch.testing.assert_close(tensor, expected[name], rtol=0.0, atol=0.0)
+
+
 def test_generation_uses_cache() -> None:
     torch.manual_seed(7)
     config = tiny_config()
@@ -180,6 +210,55 @@ def test_bf16_forward_backward() -> None:
     for name, parameter in model.named_parameters():
         assert parameter.grad is not None, name
         assert torch.isfinite(parameter.grad).all(), name
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or not flash_attention_available(),
+    reason="FlashAttention accelerator backend is unavailable",
+)
+def test_flash_local_attention_matches_sdpa_numerically() -> None:
+    """The production local window agrees with the dense SDPA reference."""
+
+    torch.manual_seed(120)
+    flash_model = LunarisDenseForCausalLM(
+        tiny_config(
+            attention_pattern="L",
+            attention_backend="flash",
+            local_window=4,
+        )
+    ).cuda()
+    sdpa_model = LunarisDenseForCausalLM(
+        tiny_config(
+            attention_pattern="L",
+            attention_backend="sdpa",
+            local_window=4,
+        )
+    ).cuda()
+    sdpa_model.load_state_dict(flash_model.state_dict())
+    tokens = torch.randint(0, flash_model.config.vocab_size, (2, 16), device="cuda")
+
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        flash_output = flash_model(tokens, labels=tokens, return_logits=False)
+        sdpa_output = sdpa_model(tokens, labels=tokens, return_logits=False)
+    assert flash_output.loss is not None and sdpa_output.loss is not None
+    torch.testing.assert_close(
+        flash_output.loss,
+        sdpa_output.loss,
+        rtol=2e-3,
+        atol=2e-3,
+    )
+
+    flash_output.loss.backward()
+    sdpa_output.loss.backward()
+    flash_gradient = flash_model.blocks[0].attention.qkv_proj.weight.grad
+    sdpa_gradient = sdpa_model.blocks[0].attention.qkv_proj.weight.grad
+    assert flash_gradient is not None and sdpa_gradient is not None
+    cosine = torch.nn.functional.cosine_similarity(
+        flash_gradient.flatten().float(),
+        sdpa_gradient.flatten().float(),
+        dim=0,
+    )
+    assert float(cosine) > 0.999
 
 
 @pytest.mark.parametrize("policy", ["block", "irl"])

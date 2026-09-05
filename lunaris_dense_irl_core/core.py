@@ -13,7 +13,7 @@ from lunaris_dense_irl2.attention import build_attention_mask
 from lunaris_dense_irl2.cache import LayerKVCache
 from lunaris_dense_irl2.irl2 import SwiGLU
 from lunaris_dense_irl2.norms import RMSNorm
-from lunaris_dense_irl2.rope import rotate_half
+from lunaris_dense_irl2.rope import apply_rotary_embedding_single
 
 from .config import LunarisIRLCoreConfig
 from .diagnostics import IRLCoreDiagnostics
@@ -83,7 +83,7 @@ class IRLCore(nn.Module):
     ) -> torch.Tensor:
         """Apply RoPE to one projected query or key tensor."""
 
-        return value * cos + rotate_half(value) * sin
+        return apply_rotary_embedding_single(value, cos, sin)
 
     @staticmethod
     def _rms(value: torch.Tensor) -> torch.Tensor:

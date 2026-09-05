@@ -1,0 +1,5 @@
+candidate,attention_pattern,layers,d_model,ffn_hidden_dim,parameters,estimated_training_flops_per_token,qualification_tokens_per_second,peak_allocated_hbm_gib,peak_reserved_hbm_gib,screen_training_tokens,dev_cross_entropy,holdout_cross_entropy,decision
+two_global,LLLLLLLG,16,768,1536,132197136,1340080128,194868.077112,32.002041,32.949219,100007936,4.236836435,4.237275217,runner_up
+deep_thin,LLLLLLLG,19,768,1280,132604563,1367212032,182341.229107,34.295442,39.234375,100007936,4.253661180,4.254172761,reject
+wide_shallow,LLLLLLLG,12,896,1600,132416908,1268908032,215185.494848,27.774324,32.728516,100007936,4.258790104,4.257733637,reject
+one_global,LLLLLLLLLLLLLLLG,16,768,1536,132197136,1311768576,196764.738068,32.002041,32.949219,100007936,4.233116644,4.232316514,select

@@ -18,12 +18,47 @@ class SwiGLU(nn.Module):
 
     def __init__(self, d_model: int, hidden_dim: int) -> None:
         super().__init__()
-        self.gate_proj = nn.Linear(d_model, hidden_dim, bias=False)
-        self.up_proj = nn.Linear(d_model, hidden_dim, bias=False)
+        self.hidden_dim = int(hidden_dim)
+        self.gate_up_proj = nn.Linear(d_model, 2 * hidden_dim, bias=False)
         self.down_proj = nn.Linear(hidden_dim, d_model, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        gate, up = self.gate_up_proj(x).split(self.hidden_dim, dim=-1)
+        return self.down_proj(F.silu(gate) * up)
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict[str, object],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        """Upgrade separate gate/up projections from version-one checkpoints."""
+
+        fused_key = prefix + "gate_up_proj.weight"
+        gate_key = prefix + "gate_proj.weight"
+        up_key = prefix + "up_proj.weight"
+        if (
+            fused_key not in state_dict
+            and gate_key in state_dict
+            and up_key in state_dict
+        ):
+            state_dict[fused_key] = torch.cat(
+                (state_dict.pop(gate_key), state_dict.pop(up_key)),
+                dim=0,
+            )
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
 
 class IRL2Cell(nn.Module):
